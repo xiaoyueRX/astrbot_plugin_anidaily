@@ -15,6 +15,13 @@ social_link: https://github.com/xiaoyueRX
 astrbot_version: ">=4.16,<5"
 support_platforms:
   - aiocqhttp
+  - qq_official
+  - qq_official_webhook
+  - telegram
+  - discord
+  - kook
+  - satori
+
 tags:
   - anime
   - 番剧
