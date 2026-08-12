@@ -121,7 +121,7 @@ def render(data, output_path):
             cover_img = None
             if cover_url:
                 try:
-                    # 修复：不继承系统代理，防止 SSL 错误
+                    # 正常请求，信任系统证书环境
                     resp = _COVER_SESSION.get(cover_url, timeout=5)
                     cover_img = Image.open(BytesIO(resp.content)).convert("RGB")
                     cover_img = cover_img.resize((56 * S, 72 * S), Image.Resampling.LANCZOS)

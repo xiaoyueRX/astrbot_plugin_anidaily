@@ -14,7 +14,7 @@ from .data_handler import DataHandler
 
 logger = logging.getLogger("astrbot")
 
-@register("astrbot_plugin_anidaily", "xiaoyueRX", "基于 yuc.wiki 的每日番剧推送卡片，订阅制定时推送", "0.1.0", "https://github.com/xiaoyueRX/astrbot_plugin_anidaily")
+@register("astrbot_plugin_anidaily", "xiaoyueRX", "基于 yuc.wiki 的每日番剧推送卡片，订阅制定时推送", "0.1.1", "https://github.com/xiaoyueRX/astrbot_plugin_anidaily")
 class AniDailyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -92,7 +92,10 @@ class AniDailyPlugin(Star):
 
     @anidaily.command("sub")
     async def sub(self, event: AstrMessageEvent):
-        '''订阅每日番剧推送'''
+        '''订阅每日番剧推送 (管理员)'''
+        if not event.is_admin:
+            yield event.plain_result("❌ 权限不足：只有管理员可以操作订阅。")
+            return
         origin = event.unified_msg_origin
         if self.data_handler.add_subscriber(origin):
             yield event.plain_result("订阅成功！每天 08:20 将为你推送今日番剧。")
@@ -101,7 +104,10 @@ class AniDailyPlugin(Star):
 
     @anidaily.command("unsub")
     async def unsub(self, event: AstrMessageEvent):
-        '''取消每日番剧推送'''
+        '''取消每日番剧推送 (管理员)'''
+        if not event.is_admin:
+            yield event.plain_result("❌ 权限不足：只有管理员可以操作订阅。")
+            return
         origin = event.unified_msg_origin
         if self.data_handler.remove_subscriber(origin):
             yield event.plain_result("取消订阅成功。")
@@ -110,8 +116,10 @@ class AniDailyPlugin(Star):
 
     @anidaily.command("list")
     async def list_subs(self, event: AstrMessageEvent):
-        '''查看当前订阅列表 (管理员可用)'''
-        # 这里简单列出，实际可增加权限检查
+        '''查看当前订阅列表 (管理员)'''
+        if not event.is_admin:
+            yield event.plain_result("❌ 权限不足。")
+            return
         subs = self.data_handler.get_subscribers()
         if not subs:
             yield event.plain_result("当前没有任何订阅。")
