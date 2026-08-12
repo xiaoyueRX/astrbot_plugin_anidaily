@@ -14,7 +14,7 @@ from .data_handler import DataHandler
 
 logger = logging.getLogger("astrbot")
 
-@register("astrbot_plugin_anidaily", "xiaoyueRX", "基于 yuc.wiki 的每日番剧推送卡片，订阅制定时推送", "0.1.1", "https://github.com/xiaoyueRX/astrbot_plugin_anidaily")
+@register("astrbot_plugin_anidaily", "xiaoyueRX", "基于 yuc.wiki 的每日番剧推送卡片，订阅制定时推送", "0.1.2", "https://github.com/xiaoyueRX/astrbot_plugin_anidaily")
 class AniDailyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
