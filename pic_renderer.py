@@ -51,7 +51,7 @@ def text_wrap(text, font, max_width):
     return lines
 
 def render(data, output_path):
-    S = 2  # 分辨率缩放因子（550→1100px 高清）
+    S = 4  # 分辨率缩放因子（550→1100px 高清）
     # 配置
     width = 550 * S
     padding = 24 * S
