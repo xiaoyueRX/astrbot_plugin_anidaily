@@ -1,0 +1,5 @@
+name: astrbot_plugin_anidaily
+desc: 基于 yuc.wiki 的每日番剧推送卡片，订阅制定时推送
+version: v0.1.0
+author: xiaoyueRX
+repo: https://github.com/xiaoyueRX/astrbot_plugin_anidaily

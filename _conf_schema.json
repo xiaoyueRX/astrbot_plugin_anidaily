@@ -1,0 +1,23 @@
+{
+    "cron_expr": {
+        "description": "推送时间的 Cron 表达式 (分 时 日 月 周)",
+        "type": "string",
+        "default": "20 8 * * *",
+        "hint": "默认为每天 08:20 (20 8 * * *)"
+    },
+    "enable_cover": {
+        "description": "是否显示封面图",
+        "type": "bool",
+        "default": true
+    },
+    "max_items": {
+        "description": "最大显示条目数",
+        "type": "int",
+        "default": 20
+    },
+    "timezone": {
+        "description": "时区",
+        "type": "string",
+        "default": "Asia/Shanghai"
+    }
+}
