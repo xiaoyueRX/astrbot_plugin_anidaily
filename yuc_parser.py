@@ -2,7 +2,22 @@ import subprocess
 import datetime
 import re
 import json
+import ssl
+import urllib.request
 from bs4 import BeautifulSoup
+
+def fetch_html(url):
+    """抓取 HTML：Python 内置 urllib，禁用代理（等价 curl --noproxy '*'）+ 忽略证书（等价 -k）"""
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}),  # 显式禁用环境代理，避免 AstrBot 代理设置影响
+        urllib.request.HTTPSHandler(context=ctx)
+    )
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with opener.open(req, timeout=30) as resp:
+        return resp.read().decode("utf-8", errors="ignore")
 
 def get_current_season_url():
     now_utc = datetime.datetime.now(datetime.timezone.utc)
@@ -29,17 +44,11 @@ def normalize_title(text):
 def parse_yuc_wiki():
     url = get_current_season_url()
     try:
-        # 使用 curl 绕过 requests 可能存在的代理/DNS 问题
-        # 显式 --noproxy '*'
-        result = subprocess.run(
-            ["curl", "-k", "-sL", "-m", "30", "--noproxy", "*", "-A", "Mozilla/5.0", url],
-            capture_output=True, text=True, check=True, encoding='utf-8', errors='ignore'
-        )
-        html = result.stdout
+        html = fetch_html(url)
         if not html:
-            return {"error": "empty html from curl"}
+            return {"error": "empty html from fetch"}
     except Exception as e:
-        return {"error": f"fetch failed via curl: {str(e)}"}
+        return {"error": f"fetch failed: {str(e)}"}
 
     soup = BeautifulSoup(html, 'html.parser')
     
