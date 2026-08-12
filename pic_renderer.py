@@ -3,6 +3,10 @@ import requests
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from io import BytesIO
 
+# 封面下载 session：禁用环境代理（某些 requests 版本不支持 requests.get(trust_env=...)，用 Session.trust_env 属性最兼容）
+_COVER_SESSION = requests.Session()
+_COVER_SESSION.trust_env = False
+
 def find_cjk_font():
     # 1. 优先使用 bundle 的字体
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -117,7 +121,7 @@ def render(data, output_path):
             if cover_url:
                 try:
                     # 修复：不继承系统代理，防止 SSL 错误
-                    resp = requests.get(cover_url, timeout=5, trust_env=False)
+                    resp = _COVER_SESSION.get(cover_url, timeout=5)
                     cover_img = Image.open(BytesIO(resp.content)).convert("RGB")
                     cover_img = cover_img.resize((56, 72), Image.Resampling.LANCZOS)
                     # 圆角处理
