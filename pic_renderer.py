@@ -51,10 +51,11 @@ def text_wrap(text, font, max_width):
     return lines
 
 def render(data, output_path):
+    S = 2  # 分辨率缩放因子（550→1100px 高清）
     # 配置
-    width = 550
-    padding = 24
-    card_margin = 10
+    width = 550 * S
+    padding = 24 * S
+    card_margin = 10 * S
     bg_color = (15, 15, 26)  # #0f0f1a
     card_color = (26, 26, 46)  # #1a1a2e
     card_border_color = (42, 42, 74)  # #2a2a4a
@@ -67,11 +68,11 @@ def render(data, output_path):
     try:
         if not font_path:
             raise Exception("No CJK font found")
-        title_font = ImageFont.truetype(font_path, 24)
-        item_title_font = ImageFont.truetype(font_path, 15)
-        info_font = ImageFont.truetype(font_path, 12)
-        badge_font = ImageFont.truetype(font_path, 11)
-        footer_font = ImageFont.truetype(font_path, 10)
+        title_font = ImageFont.truetype(font_path, 24 * S)
+        item_title_font = ImageFont.truetype(font_path, 15 * S)
+        info_font = ImageFont.truetype(font_path, 12 * S)
+        badge_font = ImageFont.truetype(font_path, 11 * S)
+        footer_font = ImageFont.truetype(font_path, 10 * S)
     except:
         # 降级使用 PIL 默认字体
         title_font = item_title_font = info_font = badge_font = footer_font = ImageFont.load_default()
@@ -79,9 +80,9 @@ def render(data, output_path):
     items = data.get("items", [])
     
     # 预估高度
-    header_height = 80
-    footer_height = 50
-    item_height = 100 # 大致
+    header_height = 80 * S
+    footer_height = 50 * S
+    item_height = 100 * S # 大致
     total_height = header_height + footer_height + max(100, len(items) * (item_height + card_margin)) + padding * 2
     
     # 创建画布
@@ -96,24 +97,24 @@ def render(data, output_path):
         draw.line([(0, y), (width, y)], fill=(r, g, b))
 
     # Header
-    draw.text((width//2, padding + 20), "今日番剧", font=title_font, fill=text_color_main, anchor="mm")
-    draw.text((width//2, padding + 50), f"{data.get('date')} {data.get('weekday')}", font=info_font, fill=text_color_sub, anchor="mm")
+    draw.text((width//2, padding + 20 * S), "今日番剧", font=title_font, fill=text_color_main, anchor="mm")
+    draw.text((width//2, padding + 50 * S), f"{data.get('date')} {data.get('weekday')}", font=info_font, fill=text_color_sub, anchor="mm")
     
     curr_y = header_height + padding
     
     if not items:
-        draw.text((width//2, curr_y + 40), "今天没有番剧更新哦~\n主人好好休息喵", font=item_title_font, fill=text_color_sub, anchor="mm", align="center")
+        draw.text((width//2, curr_y + 40 * S), "今天没有番剧更新哦~\n主人好好休息喵", font=item_title_font, fill=text_color_sub, anchor="mm", align="center")
         curr_y += 100
     else:
         for i, item in enumerate(items):
             c = colors[i % len(colors)]
             
             # 卡片容器
-            card_rect = [padding, curr_y, width - padding, curr_y + 95]
+            card_rect = [padding, curr_y, width - padding, curr_y + 95 * S]
             # 绘制圆角矩形背景和边框
-            draw.rounded_rectangle(card_rect, radius=12, fill=card_color, outline=card_border_color, width=1)
+            draw.rounded_rectangle(card_rect, radius=12 * S, fill=card_color, outline=card_border_color, width=1)
             # 左侧彩色条
-            draw.rectangle([padding, curr_y + 5, padding + 3, curr_y + 90], fill=c)
+            draw.rectangle([padding, curr_y + 5 * S, padding + 3 * S, curr_y + 90 * S], fill=c)
             
             # 封面
             cover_url = item.get("cover")
@@ -123,36 +124,36 @@ def render(data, output_path):
                     # 修复：不继承系统代理，防止 SSL 错误
                     resp = _COVER_SESSION.get(cover_url, timeout=5)
                     cover_img = Image.open(BytesIO(resp.content)).convert("RGB")
-                    cover_img = cover_img.resize((56, 72), Image.Resampling.LANCZOS)
+                    cover_img = cover_img.resize((56 * S, 72 * S), Image.Resampling.LANCZOS)
                     # 圆角处理
-                    mask = Image.new('L', (56, 72), 0)
+                    mask = Image.new('L', (56 * S, 72 * S), 0)
                     mask_draw = ImageDraw.Draw(mask)
-                    mask_draw.rounded_rectangle([0, 0, 56, 72], radius=8, fill=255)
+                    mask_draw.rounded_rectangle([0, 0, 56 * S, 72 * S], radius=8 * S, fill=255)
                     
-                    target_x, target_y = padding + 14, curr_y + 9
+                    target_x, target_y = padding + 14 * S, curr_y + 9 * S
                     img.paste(cover_img, (target_x, target_y), mask)
                     # 封面边框
-                    draw.rounded_rectangle([target_x, target_y, target_x + 56, target_y + 72], radius=8, outline=(*c, 64), width=2)
+                    draw.rounded_rectangle([target_x, target_y, target_x + 56 * S, target_y + 72 * S], radius=8 * S, outline=(*c, 64), width=2)
                 except:
                     cover_img = None
             
             if not cover_img:
                 # 占位图
-                placeholder_x, placeholder_y = padding + 14, curr_y + 9
-                draw.rounded_rectangle([placeholder_x, placeholder_y, placeholder_x + 56, placeholder_y + 72], radius=8, fill=(42, 42, 74))
+                placeholder_x, placeholder_y = padding + 14 * S, curr_y + 9 * S
+                draw.rounded_rectangle([placeholder_x, placeholder_y, placeholder_x + 56 * S, placeholder_y + 72 * S], radius=8 * S, fill=(42, 42, 74))
             
             # 文字内容
-            text_x = padding + 14 + 56 + 14
+            text_x = padding + 14 * S + 56 * S + 14 * S
             title = item.get("title", "未知标题")
             
             # 标题折行处理 (最多两行)
             wrapped_title = text_wrap(title, item_title_font, width - text_x - padding - 10)
-            title_y = curr_y + 16
+            title_y = curr_y + 16 * S
             for line_idx, line in enumerate(wrapped_title[:2]):
-                draw.text((text_x, title_y + line_idx * 20), line, font=item_title_font, fill=text_color_main)
+                draw.text((text_x, title_y + line_idx * 20 * S), line, font=item_title_font, fill=text_color_main)
             
             # 时间和状态
-            info_y = curr_y + 64
+            info_y = curr_y + 64 * S
             time_str = f"Time: {item.get('time')}"
             draw.text((text_x, info_y), time_str, font=info_font, fill=text_color_sub)
             
@@ -161,19 +162,19 @@ def render(data, output_path):
             
             # Badge
             status_w = draw.textlength(status_text, font=badge_font)
-            badge_h = 16
-            badge_x = text_x + 85
-            badge_y = info_y - 2
-            badge_rect = [badge_x, badge_y, badge_x + status_w + 12, badge_y + badge_h]
+            badge_h = 16 * S
+            badge_x = text_x + 85 * S
+            badge_y = info_y - 2 * S
+            badge_rect = [badge_x, badge_y, badge_x + status_w + 12 * S, badge_y + badge_h]
             # 先画背景
             draw.rounded_rectangle(badge_rect, radius=4, fill=badge_color)
             # 再画文字（白色）
-            draw.text((badge_x + (status_w + 12) / 2, badge_y + badge_h / 2 + 1), status_text, font=badge_font, fill=(255, 255, 255), anchor="mm")
+            draw.text((badge_x + (status_w + 12 * S) / 2, badge_y + badge_h / 2 + 1 * S), status_text, font=badge_font, fill=(255, 255, 255), anchor="mm")
             
-            curr_y += 95 + card_margin
+            curr_y += 95 * S + card_margin
 
     # Footer
-    draw.text((width//2, curr_y + 20), "AniDaily @ xiaoyueRX - 番剧监控", font=footer_font, fill=(85, 85, 119), anchor="mm")
+    draw.text((width//2, curr_y + 20 * S), "AniDaily @ xiaoyueRX - 番剧监控", font=footer_font, fill=(85, 85, 119), anchor="mm")
     
     # 裁剪高度
     final_img = img.crop((0, 0, width, curr_y + footer_height))
