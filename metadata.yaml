@@ -2,13 +2,10 @@ name: astrbot_plugin_anidaily
 display_name: 番剧每日推送
 short_desc: 基于 yuc.wiki 的 4K 高清番剧每日更新提醒
 desc: |
-  基于 yuc.wiki 数据的番剧每日更新提醒插件，提供 4K 极精美深色卡片。
-
-  - 🌸 **今日番剧**：每日定时推送当天更新的番剧列表，精彩不再错过。
-  - 🎨 **精美卡片**：4K 级超清渲染，包含封面海报、放送时间及连载状态。
-  - 🚀 **即时获取**：使用 `/anidaily now` 随时查看今日更新。
-  - ⚙️ **灵活配置**：支持自定义推送时间（Cron 表达式）。
-version: 0.1.2
+  🌸 **每日定时推送今日番剧更新。**
+  🎨 **4K 级超清深色海报卡片。**
+  🚀 **支持 /anidaily now 即时查看。**
+version: 0.1.3
 author: xiaoyueRX
 repo: https://github.com/xiaoyueRX/astrbot_plugin_anidaily
 social_link: https://github.com/xiaoyueRX
