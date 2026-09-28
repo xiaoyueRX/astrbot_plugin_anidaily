@@ -14,7 +14,7 @@ from .data_handler import DataHandler
 
 logger = logging.getLogger("astrbot")
 
-@register("astrbot_plugin_anidaily", "xiaoyueRX", "基于 yuc.wiki 的 4K 高清番剧每日/周历推送，支持全自动换季感知与动态集数推算", "0.2.0", "https://github.com/xiaoyueRX/astrbot_plugin_anidaily")
+@register("astrbot_plugin_anidaily", "xiaoyueRX", "基于 yuc.wiki 的 8K/多档位超清番剧每日/周历推送，支持全自动换季感知与动态集数推算", "0.2.1", "https://github.com/xiaoyueRX/astrbot_plugin_anidaily")
 class AniDailyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
@@ -91,7 +91,8 @@ class AniDailyPlugin(Star):
                 return
             
             latest_png = os.path.join(self.data_dir, "anidaily_latest.png")
-            await asyncio.to_thread(render, data, latest_png)
+            scale = self.config.get("render_scale", "8k")
+            await asyncio.to_thread(render, data, latest_png, scale)
             
             for origin in subscribers.keys():
                 try:
@@ -120,7 +121,8 @@ class AniDailyPlugin(Star):
                 return
             
             season_png = os.path.join(self.data_dir, "aniseason_latest.png")
-            await asyncio.to_thread(render_weekly, data, season_png)
+            scale = self.config.get("render_scale", "8k")
+            await asyncio.to_thread(render_weekly, data, season_png, None, scale)
             
             for origin in subscribers.keys():
                 try:
@@ -166,7 +168,8 @@ class AniDailyPlugin(Star):
                 return
             
             latest_png = os.path.join(self.data_dir, "anidaily_latest.png")
-            await asyncio.to_thread(render, data, latest_png)
+            scale = self.config.get("render_scale", "8k")
+            await asyncio.to_thread(render, data, latest_png, scale)
             
             yield event.image_result(latest_png)
             if self.config.get("auto_clean_temp", True):
@@ -186,7 +189,8 @@ class AniDailyPlugin(Star):
                 return
             
             season_png = os.path.join(self.data_dir, "aniseason_latest.png")
-            await asyncio.to_thread(render_weekly, data, season_png)
+            scale = self.config.get("render_scale", "8k")
+            await asyncio.to_thread(render_weekly, data, season_png, None, scale)
             
             yield event.image_result(season_png)
             if self.config.get("auto_clean_temp", True):
@@ -206,7 +210,8 @@ class AniDailyPlugin(Star):
                 return
             
             season_png = os.path.join(self.data_dir, "aniseason_latest.png")
-            await asyncio.to_thread(render_weekly, data, season_png)
+            scale = self.config.get("render_scale", "8k")
+            await asyncio.to_thread(render_weekly, data, season_png, None, scale)
             
             yield event.image_result(season_png)
             if self.config.get("auto_clean_temp", True):

@@ -31,6 +31,12 @@
         "type": "int",
         "default": 20
     },
+    "render_scale": {
+        "description": "图片渲染清晰度档位 (支持 1k, 2k, 4k, 8k, 16k 或自定义倍率数值)",
+        "type": "string",
+        "default": "8k",
+        "hint": "控制周报与日报图片清晰度。可选 1k/2k/4k/8k/16k，默认 8k 为真·8K超精细海报级 (周报宽7680px)；亦可填写纯数字倍率。"
+    },
     "auto_clean_temp": {
         "description": "发送后是否自动安全清理临时图片碎片并保持磁盘零膨胀",
         "type": "bool",

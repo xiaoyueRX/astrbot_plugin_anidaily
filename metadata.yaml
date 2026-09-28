@@ -1,12 +1,12 @@
 name: astrbot_plugin_anidaily
 display_name: 番剧每日/周历推送
-short_desc: 基于 yuc.wiki 的 4K 高清番剧每日与全景周历推送
+short_desc: 基于 yuc.wiki 的 8K 超清番剧每日与全景周历推送
 desc: |
   🌸 **每日定时推送今日番剧更新 (Daily Report)。**
   📅 **全景周历排期与换季平滑感知 (Weekly Overview)。**
-  🎨 **4K 视网膜级暗黑质感与动态集数推算。**
+  🎨 **真·8K 旗舰海报级超清暗黑质感与动态集数推算。**
   🚀 **支持 /anidaily now 与 /aniseason 即时查看。**
-version: 0.2.0
+version: 0.2.1
 author: xiaoyueRX
 repo: https://github.com/xiaoyueRX/astrbot_plugin_anidaily
 social_link: https://github.com/xiaoyueRX

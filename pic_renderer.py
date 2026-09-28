@@ -9,6 +9,67 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta, date
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
+# 允许超大分辨率渲染（如 8K/16K），避免高分辨率下触发 DecompressionBombError
+Image.MAX_IMAGE_PIXELS = None
+
+def parse_scale(scale_input: str | int | float | None, mode: str = "weekly") -> float:
+    """
+    解析并映射清晰度档位与缩放倍率。
+    mode="weekly": Base Width = 2560px
+      - "1k": S = 0.5 (Width: 1280px, 轻量省流)
+      - "2k": S = 1.0 (Width: 2560px, 标准 2K)
+      - "4k": S = 1.5 (Width: 3840px, 4K UHD)
+      - "5k": S = 2.0 (Width: 5120px, 5K 经典)
+      - "8k": S = 3.0 (Width: 7680px, 8K UHD 旗舰海报级)
+      - "16k": S = 6.0 (Width: 15360px, 16K 发烧级)
+    mode="daily": Base Width = 550px
+      - "1k": S = 2.0 (Width: 1100px)
+      - "2k": S = 4.0 (Width: 2200px, 4K视网膜级)
+      - "4k": S = 7.0 (Width: 3850px)
+      - "8k": S = 14.0 (Width: 7700px, 8K 级)
+      - "16k": S = 28.0 (Width: 15400px, 16K 级)
+    亦支持纯数值输入（如 3 或 "3.0" 直接作为缩放系数）。
+    设置安全上限，防止超大数值导致内存爆仓。
+    """
+    weekly_presets = {
+        "1k": 0.5,
+        "2k": 1.0,
+        "4k": 1.5,
+        "5k": 2.0,
+        "8k": 3.0,
+        "16k": 6.0
+    }
+    daily_presets = {
+        "1k": 2.0,
+        "2k": 4.0,
+        "4k": 7.0,
+        "8k": 14.0,
+        "16k": 28.0
+    }
+
+    preset_map = weekly_presets if mode == "weekly" else daily_presets
+    default_val = 3.0 if mode == "weekly" else 14.0
+
+    if scale_input is None:
+        return default_val
+
+    s_str = str(scale_input).strip().lower()
+    if s_str in preset_map:
+        return preset_map[s_str]
+
+    # 尝试纯数字解析
+    try:
+        val = float(s_str)
+        if val <= 0:
+            return default_val
+        # 安全上限约束：weekly 最大 S=8.0 (20480px), daily 最大 S=32.0 (17600px)
+        max_limit = 8.0 if mode == "weekly" else 32.0
+        if val > max_limit:
+            val = max_limit
+        return val
+    except ValueError:
+        return default_val
+
 def find_cjk_font():
     """探测或加载中文字体，优先插件内置字体"""
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -203,24 +264,26 @@ class AlphaCanvas:
     def __init__(self, base_img: Image.Image):
         self.img = base_img
 
-    def draw_alpha_rounded_rectangle(self, box, radius, fill=None, outline=None, width=1):
-        x0, y0, x1, y1 = [int(v) for v in box]
+    def draw_alpha_rounded_rectangle(self, box, radius: float | int, fill=None, outline=None, width: float | int = 1):
+        x0, y0, x1, y1 = [int(round(v)) for v in box]
         bw = x1 - x0
         bh = y1 - y0
         if bw <= 0 or bh <= 0:
             return
 
+        rad = int(round(radius))
+        w = max(1, int(round(width)))
         # 创建局部微型 RGBA 图层
         layer = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
         ldraw = ImageDraw.Draw(layer)
-        ldraw.rounded_rectangle([0, 0, bw, bh], radius=radius, fill=fill, outline=outline, width=width)
+        ldraw.rounded_rectangle([0, 0, bw, bh], radius=rad, fill=fill, outline=outline, width=w)
         
         # 使用图层自身作为 mask，将半透明层贴到底图上
         self.img.paste(layer, (x0, y0), layer)
 
-def render(data: dict, output_path: str):
+def render(data: dict, output_path: str, scale: str | int | float | None = "8k"):
     """
-    使用纯 Pillow 渲染 4K/Retina 高清（S=4）今日番剧日报卡片。
+    使用纯 Pillow 渲染今日番剧日报卡片，支持 1k/2k/4k/8k/16k 或自定义倍率。
     视觉风格与 8K 周历看板高度统一：
     - Dark Mode 深色系画布 (#07070f / #0e0e1c / #121224)
     - 毒刺绿 (#39FF14) 与青蓝 (#00E5FF) 发光点缀
@@ -229,28 +292,28 @@ def render(data: dict, output_path: str):
     - 彩色胶囊集数徽章 (待开播/首播/完结/跨季/连载)
     - 严格居中的 GitHub 专属页脚 (PROJECT BY xiaoyueRX · https://github.com/xiaoyueRX)
     """
-    S = 4  # 分辨率放大因子 (Base 550px -> 2200px 4K级)
-    width = 550 * S
-    padding_x = 24 * S
-    padding_y = 24 * S
-    card_gap = 12 * S
+    S = parse_scale(scale, mode="daily")
+    width = int(round(550 * S))
+    padding_x = int(round(24 * S))
+    padding_y = int(round(24 * S))
+    card_gap = int(round(12 * S))
 
     font_path = find_cjk_font()
     try:
         if not font_path:
             raise Exception("No CJK font found")
-        f_brand_tag = ImageFont.truetype(font_path, 13 * S)
-        f_brand_sub = ImageFont.truetype(font_path, 9 * S)
-        f_header_title = ImageFont.truetype(font_path, 22 * S)
-        f_header_sub = ImageFont.truetype(font_path, 11 * S)
-        f_header_chip_num = ImageFont.truetype(font_path, 20 * S)
-        f_header_chip_label = ImageFont.truetype(font_path, 10 * S)
-        f_card_title = ImageFont.truetype(font_path, 15 * S)
-        f_card_info = ImageFont.truetype(font_path, 11 * S)
-        f_card_badge = ImageFont.truetype(font_path, 10 * S)
-        f_footer = ImageFont.truetype(font_path, 11 * S)
-        f_footer_bold = ImageFont.truetype(font_path, 11 * S)
-        f_empty = ImageFont.truetype(font_path, 14 * S)
+        f_brand_tag = ImageFont.truetype(font_path, max(10, int(round(13 * S))))
+        f_brand_sub = ImageFont.truetype(font_path, max(8, int(round(9 * S))))
+        f_header_title = ImageFont.truetype(font_path, max(14, int(round(22 * S))))
+        f_header_sub = ImageFont.truetype(font_path, max(9, int(round(11 * S))))
+        f_header_chip_num = ImageFont.truetype(font_path, max(12, int(round(20 * S))))
+        f_header_chip_label = ImageFont.truetype(font_path, max(8, int(round(10 * S))))
+        f_card_title = ImageFont.truetype(font_path, max(11, int(round(15 * S))))
+        f_card_info = ImageFont.truetype(font_path, max(9, int(round(11 * S))))
+        f_card_badge = ImageFont.truetype(font_path, max(8, int(round(10 * S))))
+        f_footer = ImageFont.truetype(font_path, max(9, int(round(11 * S))))
+        f_footer_bold = ImageFont.truetype(font_path, max(9, int(round(11 * S))))
+        f_empty = ImageFont.truetype(font_path, max(10, int(round(14 * S))))
     except Exception:
         f_brand_tag = f_brand_sub = f_header_title = f_header_sub = ImageFont.load_default()
         f_header_chip_num = f_header_chip_label = f_card_title = f_card_info = f_card_badge = f_footer = f_footer_bold = f_empty = ImageFont.load_default()
@@ -262,12 +325,12 @@ def render(data: dict, output_path: str):
     is_transition = data.get("is_transition", False)
 
     # 预计算卡片尺寸与总高度
-    header_box_h = 74 * S
-    footer_box_h = 44 * S
-    card_h = 92 * S
+    header_box_h = int(round(74 * S))
+    footer_box_h = int(round(44 * S))
+    card_h = int(round(92 * S))
 
-    content_h = (len(items) * (card_h + card_gap) - card_gap) if items else (120 * S)
-    total_height = padding_y + header_box_h + 16 * S + content_h + 16 * S + footer_box_h + padding_y
+    content_h = (len(items) * (card_h + card_gap) - card_gap) if items else int(round(120 * S))
+    total_height = int(round(padding_y + header_box_h + 16 * S + content_h + 16 * S + footer_box_h + padding_y))
 
     # 1. 创建画布并填充暗黑底色 (RGB 模式)
     img = Image.new("RGB", (width, total_height), (7, 7, 15))
@@ -298,9 +361,9 @@ def render(data: dict, output_path: str):
     )
 
     # 左侧霓虹标牌 (Brand Glow Tag)
-    tag_w = 64 * S
-    tag_h = 46 * S
-    tag_x0 = header_x0 + 14 * S
+    tag_w = int(round(64 * S))
+    tag_h = int(round(46 * S))
+    tag_x0 = header_x0 + int(round(14 * S))
     tag_y0 = header_y0 + (header_box_h - tag_h) // 2
     alpha_canvas.draw_alpha_rounded_rectangle(
         [tag_x0, tag_y0, tag_x0 + tag_w, tag_y0 + tag_h],
@@ -314,18 +377,18 @@ def render(data: dict, output_path: str):
     tag_year = tag_parts[0] if len(tag_parts) > 0 else "2026"
     tag_sub = " ".join(tag_parts[1:]) if len(tag_parts) > 1 else "AUTUMN"
     # 标牌年份与英文
-    draw.text((tag_x0 + tag_w // 2, tag_y0 + 14 * S), tag_year, font=f_brand_tag, fill=(0, 229, 255), anchor="mm")
-    draw.text((tag_x0 + tag_w // 2, tag_y0 + 32 * S), tag_sub, font=f_brand_sub, fill=(57, 255, 20), anchor="mm")
+    draw.text((tag_x0 + tag_w // 2, tag_y0 + int(round(14 * S))), tag_year, font=f_brand_tag, fill=(0, 229, 255), anchor="mm")
+    draw.text((tag_x0 + tag_w // 2, tag_y0 + int(round(32 * S))), tag_sub, font=f_brand_sub, fill=(57, 255, 20), anchor="mm")
 
     # Header 标题与副标题
-    title_x = tag_x0 + tag_w + 16 * S
+    title_x = tag_x0 + tag_w + int(round(16 * S))
     title_text = "今日新番 · 每日放送"
-    draw.text((title_x, tag_y0 + 12 * S), title_text, font=f_header_title, fill=(255, 255, 255), anchor="lm")
+    draw.text((title_x, tag_y0 + int(round(12 * S))), title_text, font=f_header_title, fill=(255, 255, 255), anchor="lm")
 
     # 副标题（绿光呼吸点 + 日期 + 换季感知）
-    sub_y = tag_y0 + 34 * S
-    dot_r = 3 * S
-    dot_cx = title_x + 5 * S
+    sub_y = tag_y0 + int(round(34 * S))
+    dot_r = int(round(3 * S))
+    dot_cx = title_x + int(round(5 * S))
     dot_cy = sub_y
     # 光晕
     alpha_canvas.draw_alpha_rounded_rectangle(
@@ -338,12 +401,12 @@ def render(data: dict, output_path: str):
     sub_text = f"{date_str} {weekday_str} · 实时动态推算"
     if is_transition:
         sub_text += " (夏秋换季交替期)"
-    draw.text((dot_cx + 10 * S, sub_y), sub_text, font=f_header_sub, fill=(163, 255, 143), anchor="lm")
+    draw.text((dot_cx + int(round(10 * S)), sub_y), sub_text, font=f_header_sub, fill=(163, 255, 143), anchor="lm")
 
     # 右侧收录统计 Chip
-    chip_w = 78 * S
-    chip_h = 44 * S
-    chip_x1 = header_x1 - 14 * S
+    chip_w = int(round(78 * S))
+    chip_h = int(round(44 * S))
+    chip_x1 = header_x1 - int(round(14 * S))
     chip_x0 = chip_x1 - chip_w
     chip_y0 = header_y0 + (header_box_h - chip_h) // 2
     alpha_canvas.draw_alpha_rounded_rectangle(
@@ -354,13 +417,13 @@ def render(data: dict, output_path: str):
         width=1 * S
     )
     # 数字与标签
-    draw.text((chip_x0 + chip_w // 2, chip_y0 + 16 * S), str(len(items)), font=f_header_chip_num, fill=(0, 229, 255), anchor="mm")
-    draw.text((chip_x0 + chip_w // 2, chip_y0 + 32 * S), "部 今日更新", font=f_header_chip_label, fill=(142, 146, 168), anchor="mm")
+    draw.text((chip_x0 + chip_w // 2, chip_y0 + int(round(16 * S))), str(len(items)), font=f_header_chip_num, fill=(0, 229, 255), anchor="mm")
+    draw.text((chip_x0 + chip_w // 2, chip_y0 + int(round(32 * S))), "部 今日更新", font=f_header_chip_label, fill=(142, 146, 168), anchor="mm")
 
     # 3. 绘制番剧卡片列表
-    cur_y = header_y1 + 16 * S
-    poster_w = 56 * S
-    poster_h = 74 * S
+    cur_y = int(round(header_y1 + 16 * S))
+    poster_w = int(round(56 * S))
+    poster_h = int(round(74 * S))
 
     # 并发预下载所有封面图片
     cover_images = {}
@@ -378,11 +441,11 @@ def render(data: dict, output_path: str):
                     cover_images[idx] = None
 
     if not items:
-        empty_box = [padding_x, cur_y, width - padding_x, cur_y + 110 * S]
+        empty_box = [padding_x, cur_y, width - padding_x, cur_y + int(round(110 * S))]
         alpha_canvas.draw_alpha_rounded_rectangle(empty_box, radius=12 * S, fill=(18, 18, 36, 220), outline=(255, 255, 255, 24), width=1 * S)
-        draw.text((width // 2, cur_y + 42 * S), "今天没有番剧更新哦~", font=f_empty, fill=(240, 243, 248), anchor="mm")
-        draw.text((width // 2, cur_y + 68 * S), "主人可以好好休息或补番喵 🐾✨", font=f_card_info, fill=(142, 146, 168), anchor="mm")
-        cur_y += 110 * S + 16 * S
+        draw.text((width // 2, cur_y + int(round(42 * S))), "今天没有番剧更新哦~", font=f_empty, fill=(240, 243, 248), anchor="mm")
+        draw.text((width // 2, cur_y + int(round(68 * S))), "主人可以好好休息或补番喵 🐾✨", font=f_card_info, fill=(142, 146, 168), anchor="mm")
+        cur_y += int(round(110 * S + 16 * S))
     else:
         for idx, item in enumerate(items):
             card_rect = [padding_x, cur_y, width - padding_x, cur_y + card_h]
@@ -408,10 +471,10 @@ def render(data: dict, output_path: str):
             else:
                 accent_color = (0, 229, 255)   # 青蓝/待开播或常态
 
-            draw.rounded_rectangle([padding_x, cur_y + 12 * S, padding_x + 3 * S, cur_y + card_h - 12 * S], radius=2 * S, fill=accent_color)
+            draw.rounded_rectangle([padding_x, cur_y + int(round(12 * S)), padding_x + int(round(3 * S)), cur_y + card_h - int(round(12 * S))], radius=int(round(2 * S)), fill=accent_color)
 
             # 封面图片处理
-            cover_x = padding_x + 14 * S
+            cover_x = padding_x + int(round(14 * S))
             cover_y = cur_y + (card_h - poster_h) // 2
             cover_rect = [cover_x, cover_y, cover_x + poster_w, cover_y + poster_h]
             cover_img = cover_images.get(idx)
@@ -419,32 +482,32 @@ def render(data: dict, output_path: str):
             # 封面圆角遮罩
             mask = Image.new("L", (poster_w, poster_h), 0)
             mask_draw = ImageDraw.Draw(mask)
-            mask_draw.rounded_rectangle([0, 0, poster_w, poster_h], radius=7 * S, fill=255)
+            mask_draw.rounded_rectangle([0, 0, poster_w, poster_h], radius=int(round(7 * S)), fill=255)
 
             if cover_img:
                 img.paste(cover_img, (cover_x, cover_y), mask)
             else:
-                draw.rounded_rectangle(cover_rect, radius=7 * S, fill=(28, 28, 54))
+                draw.rounded_rectangle(cover_rect, radius=int(round(7 * S)), fill=(28, 28, 54))
                 draw.text((cover_x + poster_w // 2, cover_y + poster_h // 2), "NO IMAGE", font=f_brand_sub, fill=(100, 100, 140), anchor="mm")
 
             # 封面细微高亮边框
             alpha_canvas.draw_alpha_rounded_rectangle(cover_rect, radius=7 * S, outline=(255, 255, 255, 40), width=1 * S)
 
             # 信息排版
-            text_x = cover_x + poster_w + 14 * S
-            max_text_w = (width - padding_x - 14 * S) - text_x
+            text_x = cover_x + poster_w + int(round(14 * S))
+            max_text_w = (width - padding_x - int(round(14 * S))) - text_x
 
             # 标题折行 (最多 2 行)
             raw_title = item.get("title", "未知番剧")
             title_lines = text_wrap(raw_title, f_card_title, max_text_w)
             
-            title_top_y = cur_y + 13 * S
+            title_top_y = cur_y + int(round(13 * S))
             for line_i, line_txt in enumerate(title_lines[:2]):
-                draw.text((text_x, title_top_y + line_i * 18 * S), line_txt, font=f_card_title, fill=(240, 243, 248))
+                draw.text((text_x, title_top_y + line_i * int(round(18 * S))), line_txt, font=f_card_title, fill=(240, 243, 248))
 
             # 底部徽章与时间
-            badge_y = cur_y + card_h - 26 * S
-            th = 18 * S
+            badge_y = cur_y + card_h - int(round(26 * S))
+            th = int(round(18 * S))
             
             # 1. 播出时间胶囊
             bj_time = item.get("time_info", {}).get("bj_time", "时间未定")
@@ -455,7 +518,7 @@ def render(data: dict, output_path: str):
             else:
                 time_badge_text = f"放送 {bj_time}"
             tw = draw.textlength(time_badge_text, font=f_card_info)
-            tb_rect = [text_x, badge_y, text_x + tw + 12 * S, badge_y + th]
+            tb_rect = [text_x, badge_y, text_x + tw + int(round(12 * S)), badge_y + th]
             alpha_canvas.draw_alpha_rounded_rectangle(
                 tb_rect,
                 radius=5 * S,
@@ -463,7 +526,7 @@ def render(data: dict, output_path: str):
                 outline=(0, 229, 255, 90),
                 width=1 * S
             )
-            draw.text((text_x + 6 * S, badge_y + th // 2), time_badge_text, font=f_card_info, fill=(0, 229, 255), anchor="lm")
+            draw.text((text_x + int(round(6 * S)), badge_y + th // 2), time_badge_text, font=f_card_info, fill=(0, 229, 255), anchor="lm")
 
             # 2. 状态/集数胶囊
             status_text = item.get("custom_badge_text", "")
@@ -474,8 +537,8 @@ def render(data: dict, output_path: str):
             status_text = re.sub(r"[⏳🏁🌟🔥⏰🕒⚡]+", "", status_text).strip()
 
             sw = draw.textlength(status_text, font=f_card_badge)
-            sb_x0 = text_x + tw + 20 * S
-            sb_rect = [sb_x0, badge_y, sb_x0 + sw + 12 * S, badge_y + th]
+            sb_x0 = text_x + tw + int(round(20 * S))
+            sb_rect = [sb_x0, badge_y, sb_x0 + sw + int(round(12 * S)), badge_y + th]
 
             # 徽章背景色与边框 (使用 alpha_canvas 绘制)
             if "final" in badge_class:
@@ -506,15 +569,15 @@ def render(data: dict, output_path: str):
                 outline=sb_border,
                 width=1 * S
             )
-            draw.text((sb_x0 + 6 * S, badge_y + th // 2), status_text, font=f_card_badge, fill=sb_text_color, anchor="lm")
+            draw.text((sb_x0 + int(round(6 * S)), badge_y + th // 2), status_text, font=f_card_badge, fill=sb_text_color, anchor="lm")
 
             # 3. 季度来源小标 (如上季跨播)
             season_tag = item.get("season_tag", "")
             if season_tag and season_tag != "本季新番":
-                st_x0 = sb_x0 + sw + 18 * S
+                st_x0 = sb_x0 + sw + int(round(18 * S))
                 st_w = draw.textlength(season_tag, font=f_card_badge)
-                if st_x0 + st_w + 12 * S <= width - padding_x - 8 * S:
-                    st_rect = [st_x0, badge_y, st_x0 + st_w + 12 * S, badge_y + th]
+                if st_x0 + st_w + int(round(12 * S)) <= width - padding_x - int(round(8 * S)):
+                    st_rect = [st_x0, badge_y, st_x0 + st_w + int(round(12 * S)), badge_y + th]
                     alpha_canvas.draw_alpha_rounded_rectangle(
                         st_rect,
                         radius=5 * S,
@@ -522,12 +585,12 @@ def render(data: dict, output_path: str):
                         outline=(57, 255, 20, 90),
                         width=1 * S
                     )
-                    draw.text((st_x0 + 6 * S, badge_y + th // 2), season_tag, font=f_card_badge, fill=(57, 255, 20), anchor="lm")
+                    draw.text((st_x0 + int(round(6 * S)), badge_y + th // 2), season_tag, font=f_card_badge, fill=(57, 255, 20), anchor="lm")
 
             cur_y += card_h + card_gap
 
     # 4. 底部 GitHub 专属页脚 (严格居中)
-    footer_y0 = cur_y + 4 * S
+    footer_y0 = cur_y + int(round(4 * S))
     footer_x0 = padding_x
     footer_x1 = width - padding_x
     footer_y1 = footer_y0 + footer_box_h
@@ -542,8 +605,8 @@ def render(data: dict, output_path: str):
 
     # 绘制居中内容：Octocat 图标 + "PROJECT BY xiaoyueRX · https://github.com/xiaoyueRX"
     octocat_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "img", "octocat.png")
-    icon_size = 18 * S
-    icon_gap = 10 * S
+    icon_size = int(round(18 * S))
+    icon_gap = int(round(10 * S))
 
     part1 = "PROJECT BY "
     part2 = "xiaoyueRX"
@@ -557,8 +620,8 @@ def render(data: dict, output_path: str):
     total_text_w = w1 + w2 + w3 + w4
     total_footer_w = icon_size + icon_gap + total_text_w
 
-    start_x = int((width - total_footer_w) // 2)
-    footer_cy = int(footer_y0 + footer_box_h // 2)
+    start_x = int(round((width - total_footer_w) / 2))
+    footer_cy = int(round(footer_y0 + footer_box_h / 2))
 
     # 绘制 Octocat 图标
     if os.path.exists(octocat_path):
@@ -586,9 +649,10 @@ def render(data: dict, output_path: str):
     final_img.save(output_path, "PNG", optimize=True)
     return output_path
 
-def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
+def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None, scale: str | int | float | None = "8k"):
     """
-    使用纯 Pillow (PIL) 零依赖自绘 5K 宽屏规格（5120px，缩放因子 S=2，Base 2560px）全景周历看板大图 (Weekly Overview)。
+    使用纯 Pillow (PIL) 零依赖自绘全景周历看板大图 (Weekly Overview)，默认拉满至 8K 旗舰海报级 (7680px)。
+    支持 1k/2k/4k/5k/8k/16k 或自定义倍率。
     像素级复刻 Hermes 黄金【8 列横向紧凑自适应流动看板 (Horizontal Swimlane Flow)】：
     - Header 区域：
       * 左侧带青蓝-荧光绿发光微框的 2026 AUTUMN (或对应季度) 标牌
@@ -596,48 +660,48 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
       * 绿色状态呼吸灯 + 实时动态推算说明 + 3 组青蓝圆点分隔的元数据说明
       * 右侧 3 组数据统计筹码 (XX部 收录总数 / XX部 TV放送 / X部 网络独播)
     - 主体 7 大星期泳道 + 网络特别放送：
-      * 左侧固定竖向指示栏 (宽 310px = 155*S)：星期英文缩写徽章、大字中文、英文全拼、更新部数胶囊
+      * 左侧固定竖向指示栏：星期英文缩写徽章、大字中文、英文全拼、更新部数胶囊
       * 若为今天 (如周一)：左侧展示鲜艳绿色的 `✓ TODAY 今日更新` 胶囊，整条泳道带有毒刺绿 (#39FF14) 微光发光外边框
-      * 右侧卡片网格流：8 列紧凑流式平铺 (cols_per_row = 8)，包含饱满大封面海报立绘 (132x172px = 66x86*S)、标题保护折行与省略号、播出时间胶囊与彩色状态徽章
+      * 右侧卡片网格流：8 列紧凑流式平铺 (cols_per_row = 8)，包含饱满大封面海报立绘、标题保护折行与省略号、播出时间胶囊与彩色状态徽章
       * 自适应高度：部数少的星期高度自动收拢，部数多的星期平铺展开，彻底消灭垂直大黑洞
     - 底部全宽 Footer：深色半透明圆角底栏，居中展示 GitHub Octocat 图标与 PROJECT BY xiaoyueRX · https://github.com/xiaoyueRX
     """
     if ref_dt is None:
         ref_dt = datetime.now(timezone(timedelta(hours=8)))
 
-    S = 2
-    width = 2560 * S  # 5120px 宽屏
-    padding_x = 48 * S
-    padding_y = 32 * S
-    lane_gap = 14 * S
-    card_gap = 10 * S
+    S = parse_scale(scale, mode="weekly")
+    width = int(round(2560 * S))  # 默认 8k: S=3.0 -> 7680px 宽屏
+    padding_x = int(round(48 * S))
+    padding_y = int(round(32 * S))
+    lane_gap = int(round(14 * S))
+    card_gap = int(round(10 * S))
 
     font_path = find_cjk_font()
     try:
         if not font_path:
             raise Exception("No CJK font found")
-        f_brand_year = ImageFont.truetype(font_path, 21 * S)
-        f_brand_sub = ImageFont.truetype(font_path, 11 * S)
-        f_header_title = ImageFont.truetype(font_path, 30 * S)
-        f_header_status = ImageFont.truetype(font_path, 12 * S)
-        f_header_meta = ImageFont.truetype(font_path, 12 * S)
-        f_header_chip_num = ImageFont.truetype(font_path, 26 * S)
-        f_header_chip_label = ImageFont.truetype(font_path, 12 * S)
+        f_brand_year = ImageFont.truetype(font_path, max(12, int(round(21 * S))))
+        f_brand_sub = ImageFont.truetype(font_path, max(8, int(round(11 * S))))
+        f_header_title = ImageFont.truetype(font_path, max(16, int(round(30 * S))))
+        f_header_status = ImageFont.truetype(font_path, max(9, int(round(12 * S))))
+        f_header_meta = ImageFont.truetype(font_path, max(9, int(round(12 * S))))
+        f_header_chip_num = ImageFont.truetype(font_path, max(14, int(round(26 * S))))
+        f_header_chip_label = ImageFont.truetype(font_path, max(9, int(round(12 * S))))
 
-        f_lane_tag = ImageFont.truetype(font_path, 11 * S)
-        f_lane_today = ImageFont.truetype(font_path, 10 * S)
-        f_lane_title = ImageFont.truetype(font_path, 22 * S)
-        f_lane_sub = ImageFont.truetype(font_path, 10 * S)
-        f_lane_count_num = ImageFont.truetype(font_path, 16 * S)
-        f_lane_count_unit = ImageFont.truetype(font_path, 11 * S)
+        f_lane_tag = ImageFont.truetype(font_path, max(8, int(round(11 * S))))
+        f_lane_today = ImageFont.truetype(font_path, max(8, int(round(10 * S))))
+        f_lane_title = ImageFont.truetype(font_path, max(14, int(round(22 * S))))
+        f_lane_sub = ImageFont.truetype(font_path, max(8, int(round(10 * S))))
+        f_lane_count_num = ImageFont.truetype(font_path, max(11, int(round(16 * S))))
+        f_lane_count_unit = ImageFont.truetype(font_path, max(8, int(round(11 * S))))
 
-        f_card_title = ImageFont.truetype(font_path, 13 * S)
-        f_card_badge = ImageFont.truetype(font_path, 10 * S)
-        f_card_time = ImageFont.truetype(font_path, 10 * S)
+        f_card_title = ImageFont.truetype(font_path, max(9, int(round(13 * S))))
+        f_card_badge = ImageFont.truetype(font_path, max(8, int(round(10 * S))))
+        f_card_time = ImageFont.truetype(font_path, max(8, int(round(10 * S))))
 
-        f_footer = ImageFont.truetype(font_path, 14 * S)
-        f_footer_bold = ImageFont.truetype(font_path, 14 * S)
-        f_empty = ImageFont.truetype(font_path, 14 * S)
+        f_footer = ImageFont.truetype(font_path, max(10, int(round(14 * S))))
+        f_footer_bold = ImageFont.truetype(font_path, max(10, int(round(14 * S))))
+        f_empty = ImageFont.truetype(font_path, max(10, int(round(14 * S))))
     except Exception:
         f_brand_year = f_brand_sub = f_header_title = f_header_status = f_header_meta = ImageFont.load_default()
         f_header_chip_num = f_header_chip_label = f_lane_tag = f_lane_today = f_lane_title = ImageFont.load_default()
@@ -668,20 +732,20 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
         ("周日", "SUNDAY", "SUN", (57, 255, 20))
     ]
 
-    # 左侧固定星期指示栏 (宽 155*S = 310px)
-    side_w = 155 * S
-    side_gap = 20 * S
+    # 左侧固定星期指示栏 (宽 155*S)
+    side_w = int(round(155 * S))
+    side_gap = int(round(20 * S))
     cols_per_row = 8
-    lane_padding_x = 18 * S
-    lane_padding_y = 12 * S
+    lane_padding_x = int(round(18 * S))
+    lane_padding_y = int(round(12 * S))
 
     lane_inner_w = (width - 2 * padding_x) - 2 * lane_padding_x
     cards_area_w = lane_inner_w - side_w - side_gap
     lane_card_w = int((cards_area_w - (cols_per_row - 1) * card_gap) // cols_per_row)
 
-    card_h = 100 * S
-    poster_w = 66 * S
-    poster_h = 86 * S
+    card_h = int(round(100 * S))
+    poster_w = int(round(66 * S))
+    poster_h = int(round(86 * S))
 
     # 统计数量
     tv_count = sum(len(schedule.get(w[0], [])) for w in weekdays_meta)
@@ -692,8 +756,9 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
     lane_render_data = []
     total_lanes_h = 0
 
-    for day_cn, day_en, day_tag, accent_color in weekdays_meta:
-        items = schedule.get(day_cn, [])
+    for day_cn, day_en, day_tag, accent_color, items, l_h, is_web_lane in [
+        (*w, schedule.get(w[0], []), 0, False) for w in weekdays_meta
+    ]:
         num_items = len(items)
         if num_items == 0:
             l_h = card_h + 2 * lane_padding_y
@@ -710,9 +775,9 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
         lane_render_data.append(("网络放送", "STREAMING SPECIALS", "NET", (255, 0, 127), web_list, web_l_h, True))
         total_lanes_h += web_l_h + lane_gap
 
-    header_box_h = 92 * S
-    footer_box_h = 52 * S
-    total_height = padding_y + header_box_h + 16 * S + total_lanes_h + 8 * S + footer_box_h + padding_y
+    header_box_h = int(round(92 * S))
+    footer_box_h = int(round(52 * S))
+    total_height = int(round(padding_y + header_box_h + 16 * S + total_lanes_h + 8 * S + footer_box_h + padding_y))
 
     img = Image.new("RGB", (width, total_height), (7, 7, 15))
     draw = ImageDraw.Draw(img)
@@ -739,9 +804,9 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
     )
 
     # 左侧标牌
-    tag_w = 90 * S
-    tag_h = 60 * S
-    tag_x0 = hx0 + 20 * S
+    tag_w = int(round(90 * S))
+    tag_h = int(round(60 * S))
+    tag_x0 = hx0 + int(round(20 * S))
     tag_y0 = hy0 + (header_box_h - tag_h) // 2
     alpha_canvas.draw_alpha_rounded_rectangle(
         [tag_x0, tag_y0, tag_x0 + tag_w, tag_y0 + tag_h],
@@ -754,19 +819,19 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
     tag_parts = season_badge_text.split()
     tag_year = tag_parts[0] if len(tag_parts) > 0 else "2026"
     tag_sub = " ".join(tag_parts[1:]) if len(tag_parts) > 1 else "AUTUMN"
-    draw.text((tag_x0 + tag_w // 2, tag_y0 + 20 * S), tag_year, font=f_brand_year, fill=(0, 229, 255), anchor="mm")
-    draw.text((tag_x0 + tag_w // 2, tag_y0 + 44 * S), tag_sub, font=f_brand_sub, fill=(57, 255, 20), anchor="mm")
+    draw.text((tag_x0 + tag_w // 2, tag_y0 + int(round(20 * S))), tag_year, font=f_brand_year, fill=(0, 229, 255), anchor="mm")
+    draw.text((tag_x0 + tag_w // 2, tag_y0 + int(round(44 * S))), tag_sub, font=f_brand_sub, fill=(57, 255, 20), anchor="mm")
 
     # 中央标题与说明
-    t_x = tag_x0 + tag_w + 24 * S
-    draw.text((t_x, tag_y0 + 16 * S), season_title, font=f_header_title, fill=(255, 255, 255), anchor="lm")
+    t_x = tag_x0 + tag_w + int(round(24 * S))
+    draw.text((t_x, tag_y0 + int(round(16 * S))), season_title, font=f_header_title, fill=(255, 255, 255), anchor="lm")
 
     # 状态灯胶囊与元数据
-    sub_y = tag_y0 + 46 * S
+    sub_y = tag_y0 + int(round(46 * S))
     status_str = f"{date_str} {today_full_cn} · 实时动态更新周历"
     st_w = draw.textlength(status_str, font=f_header_status)
-    pill_w = int(st_w + 30 * S)
-    pill_h = 22 * S
+    pill_w = int(round(st_w + 30 * S))
+    pill_h = int(round(22 * S))
     pill_x0 = t_x
     pill_y0 = sub_y - pill_h // 2
 
@@ -777,38 +842,38 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
         outline=(57, 255, 20, 90),
         width=1 * S
     )
-    dot_cx = pill_x0 + 12 * S
+    dot_cx = pill_x0 + int(round(12 * S))
     dot_cy = sub_y
-    dot_r = 4 * S
+    dot_r = int(round(4 * S))
     alpha_canvas.draw_alpha_rounded_rectangle(
         [dot_cx - dot_r - 2 * S, dot_cy - dot_r - 2 * S, dot_cx + dot_r + 2 * S, dot_cy + dot_r + 2 * S],
         radius=6 * S,
         fill=(57, 255, 20, 60)
     )
     draw.ellipse([dot_cx - dot_r, dot_cy - dot_r, dot_cx + dot_r, dot_cy + dot_r], fill=(57, 255, 20))
-    draw.text((dot_cx + 10 * S, sub_y), status_str, font=f_header_status, fill=(163, 255, 143), anchor="lm")
+    draw.text((dot_cx + int(round(10 * S)), sub_y), status_str, font=f_header_status, fill=(163, 255, 143), anchor="lm")
 
     # 右侧跟随的 3 组元数据标签
-    meta_x = pill_x0 + pill_w + 16 * S
+    meta_x = pill_x0 + pill_w + int(round(16 * S))
     meta_items = [
         sub_title_extra,
         "8列紧凑横向流动看板 (Horizontal Swimlane Flow)",
         "北京时间全量校准"
     ]
     for mi in meta_items:
-        draw.ellipse([meta_x, sub_y - 2 * S, meta_x + 4 * S, sub_y + 2 * S], fill=(0, 229, 255))
-        meta_x += 10 * S
+        draw.ellipse([meta_x, sub_y - int(round(2 * S)), meta_x + int(round(4 * S)), sub_y + int(round(2 * S))], fill=(0, 229, 255))
+        meta_x += int(round(10 * S))
         draw.text((meta_x, sub_y), mi, font=f_header_meta, fill=(142, 146, 168), anchor="lm")
-        meta_x += draw.textlength(mi, font=f_header_meta) + 16 * S
+        meta_x += int(round(draw.textlength(mi, font=f_header_meta) + 16 * S))
 
     # 右侧 3 组统计筹码
-    chip_h = 56 * S
+    chip_h = int(round(56 * S))
     chip_y0 = hy0 + (header_box_h - chip_h) // 2
     chip_y1 = chip_y0 + chip_h
 
     # 筹码 3 (最右): 网络独播
-    c3_w = 120 * S
-    c3_x1 = hx1 - 20 * S
+    c3_w = int(round(120 * S))
+    c3_x1 = hx1 - int(round(20 * S))
     c3_x0 = c3_x1 - c3_w
     alpha_canvas.draw_alpha_rounded_rectangle(
         [c3_x0, chip_y0, c3_x1, chip_y1],
@@ -817,16 +882,16 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
         outline=(255, 255, 255, 24),
         width=1 * S
     )
-    draw.text((c3_x0 + 20 * S, chip_y0 + chip_h // 2), str(web_count), font=f_header_chip_num, fill=(255, 255, 255), anchor="lm")
-    draw.text((c3_x0 + 48 * S, chip_y0 + chip_h // 2), "部 网络独播", font=f_header_chip_label, fill=(142, 146, 168), anchor="lm")
+    draw.text((c3_x0 + int(round(20 * S)), chip_y0 + chip_h // 2), str(web_count), font=f_header_chip_num, fill=(255, 255, 255), anchor="lm")
+    draw.text((c3_x0 + int(round(48 * S)), chip_y0 + chip_h // 2), "部 网络独播", font=f_header_chip_label, fill=(142, 146, 168), anchor="lm")
 
     # 分割线 2
-    div2_x = c3_x0 - 14 * S
-    draw.line([(div2_x, chip_y0 + 10 * S), (div2_x, chip_y1 - 10 * S)], fill=(255, 255, 255, 30), width=1 * S)
+    div2_x = c3_x0 - int(round(14 * S))
+    draw.line([(div2_x, chip_y0 + int(round(10 * S))), (div2_x, chip_y1 - int(round(10 * S)))], fill=(255, 255, 255, 30), width=max(1, int(round(1 * S))))
 
     # 筹码 2 (中间): 电视台周更
-    c2_w = 130 * S
-    c2_x1 = div2_x - 14 * S
+    c2_w = int(round(130 * S))
+    c2_x1 = div2_x - int(round(14 * S))
     c2_x0 = c2_x1 - c2_w
     alpha_canvas.draw_alpha_rounded_rectangle(
         [c2_x0, chip_y0, c2_x1, chip_y1],
@@ -835,16 +900,16 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
         outline=(255, 255, 255, 24),
         width=1 * S
     )
-    draw.text((c2_x0 + 18 * S, chip_y0 + chip_h // 2), str(tv_count), font=f_header_chip_num, fill=(255, 255, 255), anchor="lm")
-    draw.text((c2_x0 + 56 * S, chip_y0 + chip_h // 2), "部 TV放送", font=f_header_chip_label, fill=(142, 146, 168), anchor="lm")
+    draw.text((c2_x0 + int(round(18 * S)), chip_y0 + chip_h // 2), str(tv_count), font=f_header_chip_num, fill=(255, 255, 255), anchor="lm")
+    draw.text((c2_x0 + int(round(56 * S)), chip_y0 + chip_h // 2), "部 TV放送", font=f_header_chip_label, fill=(142, 146, 168), anchor="lm")
 
     # 分割线 1
-    div1_x = c2_x0 - 14 * S
-    draw.line([(div1_x, chip_y0 + 10 * S), (div1_x, chip_y1 - 10 * S)], fill=(255, 255, 255, 30), width=1 * S)
+    div1_x = c2_x0 - int(round(14 * S))
+    draw.line([(div1_x, chip_y0 + int(round(10 * S))), (div1_x, chip_y1 - int(round(10 * S)))], fill=(255, 255, 255, 30), width=max(1, int(round(1 * S))))
 
     # 筹码 1 (主筹码): 收录总数
-    c1_w = 140 * S
-    c1_x1 = div1_x - 14 * S
+    c1_w = int(round(140 * S))
+    c1_x1 = div1_x - int(round(14 * S))
     c1_x0 = c1_x1 - c1_w
     alpha_canvas.draw_alpha_rounded_rectangle(
         [c1_x0, chip_y0, c1_x1, chip_y1],
@@ -853,8 +918,8 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
         outline=(0, 229, 255, 90),
         width=1 * S
     )
-    draw.text((c1_x0 + 18 * S, chip_y0 + chip_h // 2), str(total_count), font=f_header_chip_num, fill=(0, 229, 255), anchor="lm")
-    draw.text((c1_x0 + 60 * S, chip_y0 + chip_h // 2), "部 收录总数", font=f_header_chip_label, fill=(163, 255, 240), anchor="lm")
+    draw.text((c1_x0 + int(round(18 * S)), chip_y0 + chip_h // 2), str(total_count), font=f_header_chip_num, fill=(0, 229, 255), anchor="lm")
+    draw.text((c1_x0 + int(round(60 * S)), chip_y0 + chip_h // 2), "部 收录总数", font=f_header_chip_label, fill=(163, 255, 240), anchor="lm")
 
     all_render_items = []
     for d in lane_render_data:
@@ -876,7 +941,7 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
                 pass
 
     # 2. 绘制各个星期泳道
-    cur_y = hy1 + 16 * S
+    cur_y = int(round(hy1 + 16 * S))
     for day_cn, day_en, day_tag, accent_color, items, l_h, is_web_lane in lane_render_data:
         is_today = (day_cn == today_weekday)
         lane_x0 = padding_x
@@ -914,48 +979,39 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
 
         stripe_color = (57, 255, 20) if is_today else accent_color
         alpha_canvas.draw_alpha_rounded_rectangle(
-            [lane_x0, lane_y0 + 4 * S, lane_x0 + 5 * S, lane_y1 - 4 * S],
+            [lane_x0, lane_y0 + int(round(4 * S)), lane_x0 + int(round(5 * S)), lane_y1 - int(round(4 * S))],
             radius=2 * S,
             fill=(*stripe_color, 255)
         )
 
-        # 左侧固定星期指示栏 (宽 155*S = 310px) - 水平 + 垂直双向居中
+        # 左侧固定星期指示栏 - 水平 + 垂直双向居中
         side_x0 = lane_x0 + lane_padding_x
         side_x1 = side_x0 + side_w
         side_cx = side_x0 + side_w // 2
 
         tag_bg_color = (57, 255, 20) if is_today else accent_color
         tag_text_color = (0, 0, 0)
-        lane_tag_w = 36 * S
-        lane_tag_h = 18 * S
+        lane_tag_w = int(round(36 * S))
+        lane_tag_h = int(round(18 * S))
 
         count_unit = "部企划" if is_web_lane else "部新作"
         c_num_str = str(len(items))
         c_unit_str = f" {count_unit}"
         c_num_w = draw.textlength(c_num_str, font=f_lane_count_num)
         c_unit_w = draw.textlength(c_unit_str, font=f_lane_count_unit)
-        c_chip_w = int(c_num_w + c_unit_w + 16 * S)
-        c_chip_h = 20 * S
+        c_chip_w = int(round(c_num_w + c_unit_w + 16 * S))
+        c_chip_h = int(round(20 * S))
 
-        # 计算侧栏内容总高度以实现垂直居中
-        # 1. 顶部 badge_row (lane_tag_h = 18*S)
-        # 2. 间距 8*S
-        # 3. day_cn (字号 22*S，视效高度约 24*S)
-        # 4. 间距 4*S
-        # 5. day_en (字号 10*S，视效高度约 12*S)
-        # 6. 间距 10*S
-        # 7. c_chip_h (20*S)
-        # content_h 约为 18 + 8 + 24 + 4 + 12 + 10 + 20 = 96*S
-        content_h = 96 * S
+        content_h = int(round(96 * S))
         side_y_start = lane_y0 + (l_h - content_h) // 2
         side_y_start = max(lane_y0 + lane_padding_y, side_y_start)
 
         # 1. 顶部 badge / today chip 居中
         badge_y = side_y_start
         if is_today:
-            today_chip_w = 100 * S
-            today_chip_h = 18 * S
-            gap = 6 * S
+            today_chip_w = int(round(100 * S))
+            today_chip_h = int(round(18 * S))
+            gap = int(round(6 * S))
             total_top_w = lane_tag_w + gap + today_chip_w
             badge_x0 = side_cx - total_top_w // 2
             alpha_canvas.draw_alpha_rounded_rectangle(
@@ -984,15 +1040,15 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
             draw.text((side_cx, badge_y + lane_tag_h // 2), day_tag, font=f_lane_tag, fill=tag_text_color, anchor="mm")
 
         # 2. 星期大字与英文全拼 (以 side_cx 为轴水平居中)
-        title_top = badge_y + lane_tag_h + 8 * S
+        title_top = badge_y + lane_tag_h + int(round(8 * S))
         day_title_color = (163, 255, 143) if is_today else (255, 255, 255)
         draw.text((side_cx, title_top), day_cn, font=f_lane_title, fill=day_title_color, anchor="mt")
 
-        sub_top = title_top + 28 * S
+        sub_top = title_top + int(round(28 * S))
         draw.text((side_cx, sub_top), day_en, font=f_lane_sub, fill=(142, 146, 168), anchor="mt")
 
         # 3. 收录部数胶囊 (以 side_cx 为轴水平居中，内部图文居中)
-        count_chip_y = sub_top + 16 * S
+        count_chip_y = sub_top + int(round(16 * S))
         count_chip_x0 = side_cx - c_chip_w // 2
         alpha_canvas.draw_alpha_rounded_rectangle(
             [count_chip_x0, count_chip_y, count_chip_x0 + c_chip_w, count_chip_y + c_chip_h],
@@ -1001,8 +1057,8 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
             outline=(*tag_bg_color, 80),
             width=1 * S
         )
-        draw.text((count_chip_x0 + 8 * S, count_chip_y + c_chip_h // 2), c_num_str, font=f_lane_count_num, fill=tag_bg_color, anchor="lm")
-        draw.text((count_chip_x0 + 8 * S + c_num_w, count_chip_y + c_chip_h // 2), c_unit_str, font=f_lane_count_unit, fill=(142, 146, 168), anchor="lm")
+        draw.text((count_chip_x0 + int(round(8 * S)), count_chip_y + c_chip_h // 2), c_num_str, font=f_lane_count_num, fill=tag_bg_color, anchor="lm")
+        draw.text((count_chip_x0 + int(round(8 * S)) + c_num_w, count_chip_y + c_chip_h // 2), c_unit_str, font=f_lane_count_unit, fill=(142, 146, 168), anchor="lm")
 
         # 右侧卡片区域
         cards_x0 = side_x0 + side_w + side_gap
@@ -1030,25 +1086,25 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
                 )
 
                 title = item.get("title", "未命名番剧")
-                cov_x0 = cx0 + 8 * S
+                cov_x0 = cx0 + int(round(8 * S))
                 cov_y0 = cy0 + (card_h - poster_h) // 2
                 cov_box = [cov_x0, cov_y0, cov_x0 + poster_w, cov_y0 + poster_h]
 
                 c_img = cover_cache.get(title)
                 c_mask = Image.new("L", (poster_w, poster_h), 0)
-                ImageDraw.Draw(c_mask).rounded_rectangle([0, 0, poster_w, poster_h], radius=8 * S, fill=255)
+                ImageDraw.Draw(c_mask).rounded_rectangle([0, 0, poster_w, poster_h], radius=int(round(8 * S)), fill=255)
                 if c_img:
-                    img.paste(c_img, (cov_x0, cov_y0), c_mask)
+                    img.paste(c_img, (int(round(cov_x0)), int(round(cov_y0))), c_mask)
                 else:
-                    draw.rounded_rectangle(cov_box, radius=8 * S, fill=(28, 28, 54))
+                    draw.rounded_rectangle(cov_box, radius=int(round(8 * S)), fill=(28, 28, 54))
                 alpha_canvas.draw_alpha_rounded_rectangle(cov_box, radius=8 * S, outline=(255, 255, 255, 36), width=1 * S)
 
                 # 优雅折行算法处理标题 (右侧顶部)
-                tx0 = cov_x0 + poster_w + 10 * S
-                max_tw = cx1 - 8 * S - tx0
+                tx0 = cov_x0 + poster_w + int(round(10 * S))
+                max_tw = cx1 - int(round(8 * S)) - tx0
                 title_lines = text_wrap_title(title, f_card_title, max_tw, max_lines=2)
                 for l_i, l_txt in enumerate(title_lines[:2]):
-                    draw.text((tx0, cy0 + 10 * S + l_i * 18 * S), l_txt, font=f_card_title, fill=(240, 243, 248), anchor="lt")
+                    draw.text((tx0, cy0 + int(round(10 * S)) + l_i * int(round(18 * S))), l_txt, font=f_card_title, fill=(240, 243, 248), anchor="lt")
 
                 # 计算动态集数徽章与播出时间徽章 (右侧底部)
                 date_raw = item.get("date_raw", "")
@@ -1099,32 +1155,32 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
                     tb_border = (0, 229, 255, 70)
                     tb_fg = (0, 229, 255)
 
-                badge_h = 16 * S
-                badge_y = cy1 - 10 * S - badge_h
+                badge_h = int(round(16 * S))
+                badge_y = cy1 - int(round(10 * S)) - badge_h
 
                 # 1. 状态徽章
                 st_w = draw.textlength(st_text, font=f_card_badge)
                 alpha_canvas.draw_alpha_rounded_rectangle(
-                    [tx0, badge_y, tx0 + st_w + 10 * S, badge_y + badge_h],
+                    [tx0, badge_y, tx0 + st_w + int(round(10 * S)), badge_y + badge_h],
                     radius=5 * S,
                     fill=st_bg,
                     outline=st_border,
                     width=1 * S
                 )
-                draw.text((tx0 + 5 * S, badge_y + badge_h // 2), st_text, font=f_card_badge, fill=st_fg, anchor="lm")
+                draw.text((tx0 + int(round(5 * S)), badge_y + badge_h // 2), st_text, font=f_card_badge, fill=st_fg, anchor="lm")
 
                 # 2. 播出时间徽章
-                tb_x = tx0 + st_w + 16 * S
+                tb_x = tx0 + st_w + int(round(16 * S))
                 tb_w = draw.textlength(tb_text, font=f_card_time)
-                if tb_x + tb_w + 10 * S <= cx1 - 6 * S:
+                if tb_x + tb_w + int(round(10 * S)) <= cx1 - int(round(6 * S)):
                     alpha_canvas.draw_alpha_rounded_rectangle(
-                        [tb_x, badge_y, tb_x + tb_w + 10 * S, badge_y + badge_h],
+                        [tb_x, badge_y, tb_x + tb_w + int(round(10 * S)), badge_y + badge_h],
                         radius=5 * S,
                         fill=tb_bg,
                         outline=tb_border,
                         width=1 * S
                     )
-                    draw.text((tb_x + 5 * S, badge_y + badge_h // 2), tb_text, font=f_card_time, fill=tb_fg, anchor="lm")
+                    draw.text((tb_x + int(round(5 * S)), badge_y + badge_h // 2), tb_text, font=f_card_time, fill=tb_fg, anchor="lm")
 
         cur_y += l_h + lane_gap
 
@@ -1143,8 +1199,8 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
     )
 
     octocat_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "img", "octocat.png")
-    icon_size = 20 * S
-    icon_gap = 12 * S
+    icon_size = int(round(20 * S))
+    icon_gap = int(round(12 * S))
 
     part1 = "PROJECT BY "
     part2 = "xiaoyueRX"
@@ -1158,8 +1214,8 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
     total_text_w = w1 + w2 + w3 + w4
     total_footer_w = icon_size + icon_gap + total_text_w
 
-    start_x = int((width - total_footer_w) // 2)
-    footer_cy = int(foot_y0 + footer_box_h // 2)
+    start_x = int(round((width - total_footer_w) / 2))
+    footer_cy = int(round(foot_y0 + footer_box_h / 2))
 
     if os.path.exists(octocat_path):
         try:
