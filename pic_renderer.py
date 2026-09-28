@@ -919,45 +919,16 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
             fill=(*stripe_color, 255)
         )
 
-        # 左侧固定星期指示栏 (宽 155*S = 310px)
+        # 左侧固定星期指示栏 (宽 155*S = 310px) - 水平 + 垂直双向居中
         side_x0 = lane_x0 + lane_padding_x
-        side_y0 = lane_y0 + lane_padding_y
         side_x1 = side_x0 + side_w
+        side_cx = side_x0 + side_w // 2
 
         tag_bg_color = (57, 255, 20) if is_today else accent_color
         tag_text_color = (0, 0, 0)
         lane_tag_w = 36 * S
         lane_tag_h = 18 * S
-        alpha_canvas.draw_alpha_rounded_rectangle(
-            [side_x0, side_y0 + 2 * S, side_x0 + lane_tag_w, side_y0 + 2 * S + lane_tag_h],
-            radius=5 * S,
-            fill=(*tag_bg_color, 240)
-        )
-        draw.text((side_x0 + lane_tag_w // 2, side_y0 + 2 * S + lane_tag_h // 2), day_tag, font=f_lane_tag, fill=tag_text_color, anchor="mm")
 
-        if is_today:
-            today_chip_x = side_x0 + lane_tag_w + 8 * S
-            today_chip_w = 100 * S
-            today_chip_h = 18 * S
-            alpha_canvas.draw_alpha_rounded_rectangle(
-                [today_chip_x, side_y0 + 2 * S, today_chip_x + today_chip_w, side_y0 + 2 * S + today_chip_h],
-                radius=9 * S,
-                fill=(57, 255, 20, 220),
-                outline=(57, 255, 20, 255),
-                width=1 * S
-            )
-            draw.text((today_chip_x + today_chip_w // 2, side_y0 + 2 * S + today_chip_h // 2), "✓ TODAY 今日更新", font=f_lane_today, fill=(5, 20, 8), anchor="mm")
-
-        # 星期大字与英文全拼
-        title_top = side_y0 + 26 * S
-        day_title_color = (163, 255, 143) if is_today else (255, 255, 255)
-        draw.text((side_x0, title_top), day_cn, font=f_lane_title, fill=day_title_color, anchor="lt")
-
-        sub_top = title_top + 28 * S
-        draw.text((side_x0, sub_top), day_en, font=f_lane_sub, fill=(142, 146, 168), anchor="lt")
-
-        # 底部收录部数胶囊
-        count_chip_y = sub_top + 16 * S
         count_unit = "部企划" if is_web_lane else "部新作"
         c_num_str = str(len(items))
         c_unit_str = f" {count_unit}"
@@ -965,15 +936,73 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
         c_unit_w = draw.textlength(c_unit_str, font=f_lane_count_unit)
         c_chip_w = int(c_num_w + c_unit_w + 16 * S)
         c_chip_h = 20 * S
+
+        # 计算侧栏内容总高度以实现垂直居中
+        # 1. 顶部 badge_row (lane_tag_h = 18*S)
+        # 2. 间距 8*S
+        # 3. day_cn (字号 22*S，视效高度约 24*S)
+        # 4. 间距 4*S
+        # 5. day_en (字号 10*S，视效高度约 12*S)
+        # 6. 间距 10*S
+        # 7. c_chip_h (20*S)
+        # content_h 约为 18 + 8 + 24 + 4 + 12 + 10 + 20 = 96*S
+        content_h = 96 * S
+        side_y_start = lane_y0 + (l_h - content_h) // 2
+        side_y_start = max(lane_y0 + lane_padding_y, side_y_start)
+
+        # 1. 顶部 badge / today chip 居中
+        badge_y = side_y_start
+        if is_today:
+            today_chip_w = 100 * S
+            today_chip_h = 18 * S
+            gap = 6 * S
+            total_top_w = lane_tag_w + gap + today_chip_w
+            badge_x0 = side_cx - total_top_w // 2
+            alpha_canvas.draw_alpha_rounded_rectangle(
+                [badge_x0, badge_y, badge_x0 + lane_tag_w, badge_y + lane_tag_h],
+                radius=5 * S,
+                fill=(*tag_bg_color, 240)
+            )
+            draw.text((badge_x0 + lane_tag_w // 2, badge_y + lane_tag_h // 2), day_tag, font=f_lane_tag, fill=tag_text_color, anchor="mm")
+
+            today_chip_x = badge_x0 + lane_tag_w + gap
+            alpha_canvas.draw_alpha_rounded_rectangle(
+                [today_chip_x, badge_y, today_chip_x + today_chip_w, badge_y + today_chip_h],
+                radius=9 * S,
+                fill=(57, 255, 20, 220),
+                outline=(57, 255, 20, 255),
+                width=1 * S
+            )
+            draw.text((today_chip_x + today_chip_w // 2, badge_y + today_chip_h // 2), "✓ TODAY 今日更新", font=f_lane_today, fill=(5, 20, 8), anchor="mm")
+        else:
+            badge_x0 = side_cx - lane_tag_w // 2
+            alpha_canvas.draw_alpha_rounded_rectangle(
+                [badge_x0, badge_y, badge_x0 + lane_tag_w, badge_y + lane_tag_h],
+                radius=5 * S,
+                fill=(*tag_bg_color, 240)
+            )
+            draw.text((side_cx, badge_y + lane_tag_h // 2), day_tag, font=f_lane_tag, fill=tag_text_color, anchor="mm")
+
+        # 2. 星期大字与英文全拼 (以 side_cx 为轴水平居中)
+        title_top = badge_y + lane_tag_h + 8 * S
+        day_title_color = (163, 255, 143) if is_today else (255, 255, 255)
+        draw.text((side_cx, title_top), day_cn, font=f_lane_title, fill=day_title_color, anchor="mt")
+
+        sub_top = title_top + 28 * S
+        draw.text((side_cx, sub_top), day_en, font=f_lane_sub, fill=(142, 146, 168), anchor="mt")
+
+        # 3. 收录部数胶囊 (以 side_cx 为轴水平居中，内部图文居中)
+        count_chip_y = sub_top + 16 * S
+        count_chip_x0 = side_cx - c_chip_w // 2
         alpha_canvas.draw_alpha_rounded_rectangle(
-            [side_x0, count_chip_y, side_x0 + c_chip_w, count_chip_y + c_chip_h],
+            [count_chip_x0, count_chip_y, count_chip_x0 + c_chip_w, count_chip_y + c_chip_h],
             radius=7 * S,
             fill=(255, 255, 255, 12),
             outline=(*tag_bg_color, 80),
             width=1 * S
         )
-        draw.text((side_x0 + 8 * S, count_chip_y + c_chip_h // 2), c_num_str, font=f_lane_count_num, fill=tag_bg_color, anchor="lm")
-        draw.text((side_x0 + 8 * S + c_num_w, count_chip_y + c_chip_h // 2), c_unit_str, font=f_lane_count_unit, fill=(142, 146, 168), anchor="lm")
+        draw.text((count_chip_x0 + 8 * S, count_chip_y + c_chip_h // 2), c_num_str, font=f_lane_count_num, fill=tag_bg_color, anchor="lm")
+        draw.text((count_chip_x0 + 8 * S + c_num_w, count_chip_y + c_chip_h // 2), c_unit_str, font=f_lane_count_unit, fill=(142, 146, 168), anchor="lm")
 
         # 右侧卡片区域
         cards_x0 = side_x0 + side_w + side_gap
