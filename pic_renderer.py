@@ -588,27 +588,27 @@ def render(data: dict, output_path: str):
 
 def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
     """
-    使用纯 Pillow (PIL) 零依赖自绘 4K 宽屏规格（3840px，缩放因子 S=4）全景周历看板大图 (Weekly Overview)。
-    像素级复刻 Hermes 黄金【横向紧凑自适应流动看板 (Horizontal Swimlane Flow)】：
+    使用纯 Pillow (PIL) 零依赖自绘 5K 宽屏规格（5120px，缩放因子 S=2，Base 2560px）全景周历看板大图 (Weekly Overview)。
+    像素级复刻 Hermes 黄金【8 列横向紧凑自适应流动看板 (Horizontal Swimlane Flow)】：
     - Header 区域：
       * 左侧带青蓝-荧光绿发光微框的 2026 AUTUMN (或对应季度) 标牌
       * 中央大标题“2026 夏秋换季交替 · 全景周历” (根据季度推算)
       * 绿色状态呼吸灯 + 实时动态推算说明 + 3 组青蓝圆点分隔的元数据说明
       * 右侧 3 组数据统计筹码 (XX部 收录总数 / XX部 TV放送 / X部 网络独播)
     - 主体 7 大星期泳道 + 网络特别放送：
-      * 左侧固定竖向指示栏 (宽 360px)：星期英文缩写徽章、大字中文、英文全拼、更新部数胶囊
+      * 左侧固定竖向指示栏 (宽 310px = 155*S)：星期英文缩写徽章、大字中文、英文全拼、更新部数胶囊
       * 若为今天 (如周一)：左侧展示鲜艳绿色的 `✓ TODAY 今日更新` 胶囊，整条泳道带有毒刺绿 (#39FF14) 微光发光外边框
-      * 右侧卡片网格流：5 列紧凑平铺，包含圆角海报立绘、标题保护折行与省略号、播出时间胶囊与彩色状态徽章
+      * 右侧卡片网格流：8 列紧凑流式平铺 (cols_per_row = 8)，包含饱满大封面海报立绘 (132x172px = 66x86*S)、标题保护折行与省略号、播出时间胶囊与彩色状态徽章
       * 自适应高度：部数少的星期高度自动收拢，部数多的星期平铺展开，彻底消灭垂直大黑洞
     - 底部全宽 Footer：深色半透明圆角底栏，居中展示 GitHub Octocat 图标与 PROJECT BY xiaoyueRX · https://github.com/xiaoyueRX
     """
     if ref_dt is None:
         ref_dt = datetime.now(timezone(timedelta(hours=8)))
 
-    S = 4
-    width = 960 * S  # 3840px 4K 宽屏
-    padding_x = 24 * S
-    padding_y = 24 * S
+    S = 2
+    width = 2560 * S  # 5120px 宽屏
+    padding_x = 48 * S
+    padding_y = 32 * S
     lane_gap = 14 * S
     card_gap = 10 * S
 
@@ -616,31 +616,32 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
     try:
         if not font_path:
             raise Exception("No CJK font found")
-        f_brand_year = ImageFont.truetype(font_path, 15 * S)
-        f_brand_sub = ImageFont.truetype(font_path, 8 * S)
-        f_header_title = ImageFont.truetype(font_path, 21 * S)
-        f_header_status = ImageFont.truetype(font_path, 10 * S)
-        f_header_meta = ImageFont.truetype(font_path, 9 * S)
-        f_header_chip_num = ImageFont.truetype(font_path, 19 * S)
-        f_header_chip_label = ImageFont.truetype(font_path, 9 * S)
+        f_brand_year = ImageFont.truetype(font_path, 21 * S)
+        f_brand_sub = ImageFont.truetype(font_path, 11 * S)
+        f_header_title = ImageFont.truetype(font_path, 30 * S)
+        f_header_status = ImageFont.truetype(font_path, 12 * S)
+        f_header_meta = ImageFont.truetype(font_path, 12 * S)
+        f_header_chip_num = ImageFont.truetype(font_path, 26 * S)
+        f_header_chip_label = ImageFont.truetype(font_path, 12 * S)
 
-        f_lane_tag = ImageFont.truetype(font_path, 9 * S)
-        f_lane_today = ImageFont.truetype(font_path, 9 * S)
-        f_lane_title = ImageFont.truetype(font_path, 20 * S)
-        f_lane_sub = ImageFont.truetype(font_path, 9 * S)
-        f_lane_count = ImageFont.truetype(font_path, 10 * S)
+        f_lane_tag = ImageFont.truetype(font_path, 11 * S)
+        f_lane_today = ImageFont.truetype(font_path, 10 * S)
+        f_lane_title = ImageFont.truetype(font_path, 22 * S)
+        f_lane_sub = ImageFont.truetype(font_path, 10 * S)
+        f_lane_count_num = ImageFont.truetype(font_path, 16 * S)
+        f_lane_count_unit = ImageFont.truetype(font_path, 11 * S)
 
-        f_card_title = ImageFont.truetype(font_path, 11 * S)
-        f_card_badge = ImageFont.truetype(font_path, 8 * S)
-        f_card_time = ImageFont.truetype(font_path, 8 * S)
+        f_card_title = ImageFont.truetype(font_path, 13 * S)
+        f_card_badge = ImageFont.truetype(font_path, 10 * S)
+        f_card_time = ImageFont.truetype(font_path, 10 * S)
 
-        f_footer = ImageFont.truetype(font_path, 11 * S)
-        f_footer_bold = ImageFont.truetype(font_path, 11 * S)
-        f_empty = ImageFont.truetype(font_path, 12 * S)
+        f_footer = ImageFont.truetype(font_path, 14 * S)
+        f_footer_bold = ImageFont.truetype(font_path, 14 * S)
+        f_empty = ImageFont.truetype(font_path, 14 * S)
     except Exception:
         f_brand_year = f_brand_sub = f_header_title = f_header_status = f_header_meta = ImageFont.load_default()
         f_header_chip_num = f_header_chip_label = f_lane_tag = f_lane_today = f_lane_title = ImageFont.load_default()
-        f_lane_sub = f_lane_count = f_card_title = f_card_badge = f_card_time = f_footer = f_footer_bold = f_empty = ImageFont.load_default()
+        f_lane_sub = f_lane_count_num = f_lane_count_unit = f_card_title = f_card_badge = f_card_time = f_footer = f_footer_bold = f_empty = ImageFont.load_default()
 
     schedule = data.get("all_schedule", {})
     if not schedule:
@@ -667,20 +668,20 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
         ("周日", "SUNDAY", "SUN", (57, 255, 20))
     ]
 
-    # 左侧固定星期指示栏 (宽 360px = 90*S)
-    side_w = 90 * S
-    side_gap = 14 * S
-    cols_per_row = 5
-    lane_padding_x = 14 * S
+    # 左侧固定星期指示栏 (宽 155*S = 310px)
+    side_w = 155 * S
+    side_gap = 20 * S
+    cols_per_row = 8
+    lane_padding_x = 18 * S
     lane_padding_y = 12 * S
 
     lane_inner_w = (width - 2 * padding_x) - 2 * lane_padding_x
     cards_area_w = lane_inner_w - side_w - side_gap
     lane_card_w = int((cards_area_w - (cols_per_row - 1) * card_gap) // cols_per_row)
 
-    card_h = 76 * S
-    poster_w = 48 * S
-    poster_h = 64 * S
+    card_h = 100 * S
+    poster_w = 66 * S
+    poster_h = 86 * S
 
     # 统计数量
     tv_count = sum(len(schedule.get(w[0], [])) for w in weekdays_meta)
@@ -695,12 +696,10 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
         items = schedule.get(day_cn, [])
         num_items = len(items)
         if num_items == 0:
-            num_rows = 1
-            l_h = 72 * S
+            l_h = card_h + 2 * lane_padding_y
         else:
             num_rows = (num_items + cols_per_row - 1) // cols_per_row
             l_h = num_rows * card_h + (num_rows - 1) * card_gap + 2 * lane_padding_y
-            l_h = max(72 * S, l_h)
         lane_render_data.append((day_cn, day_en, day_tag, accent_color, items, l_h, False))
         total_lanes_h += l_h + lane_gap
 
@@ -708,12 +707,11 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
     if web_count > 0:
         num_rows = (web_count + cols_per_row - 1) // cols_per_row
         web_l_h = num_rows * card_h + (num_rows - 1) * card_gap + 2 * lane_padding_y
-        web_l_h = max(72 * S, web_l_h)
         lane_render_data.append(("网络放送", "STREAMING SPECIALS", "NET", (255, 0, 127), web_list, web_l_h, True))
         total_lanes_h += web_l_h + lane_gap
 
-    header_box_h = 70 * S
-    footer_box_h = 40 * S
+    header_box_h = 92 * S
+    footer_box_h = 52 * S
     total_height = padding_y + header_box_h + 16 * S + total_lanes_h + 8 * S + footer_box_h + padding_y
 
     img = Image.new("RGB", (width, total_height), (7, 7, 15))
@@ -734,20 +732,20 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
     hy1 = hy0 + header_box_h
     alpha_canvas.draw_alpha_rounded_rectangle(
         [hx0, hy0, hx1, hy1],
-        radius=14 * S,
+        radius=18 * S,
         fill=(14, 14, 28, 230),
         outline=(255, 255, 255, 30),
         width=1 * S
     )
 
     # 左侧标牌
-    tag_w = 68 * S
-    tag_h = 46 * S
-    tag_x0 = hx0 + 14 * S
+    tag_w = 90 * S
+    tag_h = 60 * S
+    tag_x0 = hx0 + 20 * S
     tag_y0 = hy0 + (header_box_h - tag_h) // 2
     alpha_canvas.draw_alpha_rounded_rectangle(
         [tag_x0, tag_y0, tag_x0 + tag_w, tag_y0 + tag_h],
-        radius=8 * S,
+        radius=12 * S,
         fill=(0, 229, 255, 25),
         outline=(0, 229, 255, 120),
         width=1 * S
@@ -756,107 +754,107 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
     tag_parts = season_badge_text.split()
     tag_year = tag_parts[0] if len(tag_parts) > 0 else "2026"
     tag_sub = " ".join(tag_parts[1:]) if len(tag_parts) > 1 else "AUTUMN"
-    draw.text((tag_x0 + tag_w // 2, tag_y0 + 14 * S), tag_year, font=f_brand_year, fill=(0, 229, 255), anchor="mm")
-    draw.text((tag_x0 + tag_w // 2, tag_y0 + 32 * S), tag_sub, font=f_brand_sub, fill=(57, 255, 20), anchor="mm")
+    draw.text((tag_x0 + tag_w // 2, tag_y0 + 20 * S), tag_year, font=f_brand_year, fill=(0, 229, 255), anchor="mm")
+    draw.text((tag_x0 + tag_w // 2, tag_y0 + 44 * S), tag_sub, font=f_brand_sub, fill=(57, 255, 20), anchor="mm")
 
     # 中央标题与说明
-    t_x = tag_x0 + tag_w + 16 * S
-    draw.text((t_x, tag_y0 + 10 * S), season_title, font=f_header_title, fill=(255, 255, 255), anchor="lm")
+    t_x = tag_x0 + tag_w + 24 * S
+    draw.text((t_x, tag_y0 + 16 * S), season_title, font=f_header_title, fill=(255, 255, 255), anchor="lm")
 
     # 状态灯胶囊与元数据
-    sub_y = tag_y0 + 34 * S
+    sub_y = tag_y0 + 46 * S
     status_str = f"{date_str} {today_full_cn} · 实时动态更新周历"
     st_w = draw.textlength(status_str, font=f_header_status)
-    pill_w = int(st_w + 22 * S)
-    pill_h = 16 * S
+    pill_w = int(st_w + 30 * S)
+    pill_h = 22 * S
     pill_x0 = t_x
     pill_y0 = sub_y - pill_h // 2
 
     alpha_canvas.draw_alpha_rounded_rectangle(
         [pill_x0, pill_y0, pill_x0 + pill_w, pill_y0 + pill_h],
-        radius=8 * S,
+        radius=11 * S,
         fill=(57, 255, 20, 30),
         outline=(57, 255, 20, 90),
         width=1 * S
     )
-    dot_cx = pill_x0 + 8 * S
+    dot_cx = pill_x0 + 12 * S
     dot_cy = sub_y
-    dot_r = 3 * S
+    dot_r = 4 * S
     alpha_canvas.draw_alpha_rounded_rectangle(
         [dot_cx - dot_r - 2 * S, dot_cy - dot_r - 2 * S, dot_cx + dot_r + 2 * S, dot_cy + dot_r + 2 * S],
-        radius=5 * S,
+        radius=6 * S,
         fill=(57, 255, 20, 60)
     )
     draw.ellipse([dot_cx - dot_r, dot_cy - dot_r, dot_cx + dot_r, dot_cy + dot_r], fill=(57, 255, 20))
-    draw.text((dot_cx + 7 * S, sub_y), status_str, font=f_header_status, fill=(163, 255, 143), anchor="lm")
+    draw.text((dot_cx + 10 * S, sub_y), status_str, font=f_header_status, fill=(163, 255, 143), anchor="lm")
 
     # 右侧跟随的 3 组元数据标签
-    meta_x = pill_x0 + pill_w + 10 * S
+    meta_x = pill_x0 + pill_w + 16 * S
     meta_items = [
         sub_title_extra,
-        "紧凑横向流动看板 (Horizontal Swimlane Flow)",
+        "8列紧凑横向流动看板 (Horizontal Swimlane Flow)",
         "北京时间全量校准"
     ]
     for mi in meta_items:
         draw.ellipse([meta_x, sub_y - 2 * S, meta_x + 4 * S, sub_y + 2 * S], fill=(0, 229, 255))
-        meta_x += 8 * S
+        meta_x += 10 * S
         draw.text((meta_x, sub_y), mi, font=f_header_meta, fill=(142, 146, 168), anchor="lm")
-        meta_x += draw.textlength(mi, font=f_header_meta) + 10 * S
+        meta_x += draw.textlength(mi, font=f_header_meta) + 16 * S
 
     # 右侧 3 组统计筹码
-    chip_h = 44 * S
+    chip_h = 56 * S
     chip_y0 = hy0 + (header_box_h - chip_h) // 2
     chip_y1 = chip_y0 + chip_h
 
     # 筹码 3 (最右): 网络独播
-    c3_w = 92 * S
-    c3_x1 = hx1 - 14 * S
+    c3_w = 120 * S
+    c3_x1 = hx1 - 20 * S
     c3_x0 = c3_x1 - c3_w
     alpha_canvas.draw_alpha_rounded_rectangle(
         [c3_x0, chip_y0, c3_x1, chip_y1],
-        radius=8 * S,
+        radius=12 * S,
         fill=(255, 255, 255, 10),
         outline=(255, 255, 255, 24),
         width=1 * S
     )
-    draw.text((c3_x0 + 16 * S, chip_y0 + chip_h // 2), str(web_count), font=f_header_chip_num, fill=(255, 255, 255), anchor="lm")
-    draw.text((c3_x0 + 38 * S, chip_y0 + chip_h // 2), "部 网络独播", font=f_header_chip_label, fill=(142, 146, 168), anchor="lm")
+    draw.text((c3_x0 + 20 * S, chip_y0 + chip_h // 2), str(web_count), font=f_header_chip_num, fill=(255, 255, 255), anchor="lm")
+    draw.text((c3_x0 + 48 * S, chip_y0 + chip_h // 2), "部 网络独播", font=f_header_chip_label, fill=(142, 146, 168), anchor="lm")
 
     # 分割线 2
-    div2_x = c3_x0 - 10 * S
-    draw.line([(div2_x, chip_y0 + 8 * S), (div2_x, chip_y1 - 8 * S)], fill=(255, 255, 255, 30), width=1 * S)
+    div2_x = c3_x0 - 14 * S
+    draw.line([(div2_x, chip_y0 + 10 * S), (div2_x, chip_y1 - 10 * S)], fill=(255, 255, 255, 30), width=1 * S)
 
     # 筹码 2 (中间): 电视台周更
-    c2_w = 98 * S
-    c2_x1 = div2_x - 10 * S
+    c2_w = 130 * S
+    c2_x1 = div2_x - 14 * S
     c2_x0 = c2_x1 - c2_w
     alpha_canvas.draw_alpha_rounded_rectangle(
         [c2_x0, chip_y0, c2_x1, chip_y1],
-        radius=8 * S,
+        radius=12 * S,
         fill=(255, 255, 255, 10),
         outline=(255, 255, 255, 24),
         width=1 * S
     )
-    draw.text((c2_x0 + 14 * S, chip_y0 + chip_h // 2), str(tv_count), font=f_header_chip_num, fill=(255, 255, 255), anchor="lm")
-    draw.text((c2_x0 + 44 * S, chip_y0 + chip_h // 2), "部 TV放送", font=f_header_chip_label, fill=(142, 146, 168), anchor="lm")
+    draw.text((c2_x0 + 18 * S, chip_y0 + chip_h // 2), str(tv_count), font=f_header_chip_num, fill=(255, 255, 255), anchor="lm")
+    draw.text((c2_x0 + 56 * S, chip_y0 + chip_h // 2), "部 TV放送", font=f_header_chip_label, fill=(142, 146, 168), anchor="lm")
 
     # 分割线 1
-    div1_x = c2_x0 - 10 * S
-    draw.line([(div1_x, chip_y0 + 8 * S), (div1_x, chip_y1 - 8 * S)], fill=(255, 255, 255, 30), width=1 * S)
+    div1_x = c2_x0 - 14 * S
+    draw.line([(div1_x, chip_y0 + 10 * S), (div1_x, chip_y1 - 10 * S)], fill=(255, 255, 255, 30), width=1 * S)
 
     # 筹码 1 (主筹码): 收录总数
-    c1_w = 104 * S
-    c1_x1 = div1_x - 10 * S
+    c1_w = 140 * S
+    c1_x1 = div1_x - 14 * S
     c1_x0 = c1_x1 - c1_w
     alpha_canvas.draw_alpha_rounded_rectangle(
         [c1_x0, chip_y0, c1_x1, chip_y1],
-        radius=8 * S,
+        radius=12 * S,
         fill=(0, 229, 255, 25),
         outline=(0, 229, 255, 90),
         width=1 * S
     )
-    draw.text((c1_x0 + 14 * S, chip_y0 + chip_h // 2), str(total_count), font=f_header_chip_num, fill=(0, 229, 255), anchor="lm")
-    draw.text((c1_x0 + 46 * S, chip_y0 + chip_h // 2), "部 收录总数", font=f_header_chip_label, fill=(163, 255, 240), anchor="lm")
+    draw.text((c1_x0 + 18 * S, chip_y0 + chip_h // 2), str(total_count), font=f_header_chip_num, fill=(0, 229, 255), anchor="lm")
+    draw.text((c1_x0 + 60 * S, chip_y0 + chip_h // 2), "部 收录总数", font=f_header_chip_label, fill=(163, 255, 240), anchor="lm")
 
     all_render_items = []
     for d in lane_render_data:
@@ -891,7 +889,7 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
                 [lane_x0 - 2 * S, lane_y0 - 2 * S, lane_x1 + 2 * S, lane_y1 + 2 * S],
                 radius=18 * S,
                 fill=(57, 255, 20, 20),
-                outline=(57, 255, 20, 90),
+                outline=(57, 255, 20, 140),
                 width=2 * S
             )
             lane_fill = (20, 36, 28, 235)
@@ -916,63 +914,66 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
 
         stripe_color = (57, 255, 20) if is_today else accent_color
         alpha_canvas.draw_alpha_rounded_rectangle(
-            [lane_x0, lane_y0 + 4 * S, lane_x0 + 4 * S, lane_y1 - 4 * S],
+            [lane_x0, lane_y0 + 4 * S, lane_x0 + 5 * S, lane_y1 - 4 * S],
             radius=2 * S,
             fill=(*stripe_color, 255)
         )
 
-        # 左侧固定星期指示栏 (宽 360px = 90*S)
+        # 左侧固定星期指示栏 (宽 155*S = 310px)
         side_x0 = lane_x0 + lane_padding_x
         side_y0 = lane_y0 + lane_padding_y
         side_x1 = side_x0 + side_w
 
         tag_bg_color = (57, 255, 20) if is_today else accent_color
         tag_text_color = (0, 0, 0)
-        lane_tag_w = 26 * S
-        lane_tag_h = 13 * S
+        lane_tag_w = 36 * S
+        lane_tag_h = 18 * S
         alpha_canvas.draw_alpha_rounded_rectangle(
-            [side_x0, side_y0, side_x0 + lane_tag_w, side_y0 + lane_tag_h],
-            radius=4 * S,
+            [side_x0, side_y0 + 2 * S, side_x0 + lane_tag_w, side_y0 + 2 * S + lane_tag_h],
+            radius=5 * S,
             fill=(*tag_bg_color, 240)
         )
-        draw.text((side_x0 + lane_tag_w // 2, side_y0 + lane_tag_h // 2), day_tag, font=f_lane_tag, fill=tag_text_color, anchor="mm")
+        draw.text((side_x0 + lane_tag_w // 2, side_y0 + 2 * S + lane_tag_h // 2), day_tag, font=f_lane_tag, fill=tag_text_color, anchor="mm")
 
         if is_today:
-            today_chip_x = side_x0 + lane_tag_w + 6 * S
-            today_chip_w = 54 * S
-            today_chip_h = 13 * S
+            today_chip_x = side_x0 + lane_tag_w + 8 * S
+            today_chip_w = 100 * S
+            today_chip_h = 18 * S
             alpha_canvas.draw_alpha_rounded_rectangle(
-                [today_chip_x, side_y0, today_chip_x + today_chip_w, side_y0 + today_chip_h],
-                radius=6 * S,
+                [today_chip_x, side_y0 + 2 * S, today_chip_x + today_chip_w, side_y0 + 2 * S + today_chip_h],
+                radius=9 * S,
                 fill=(57, 255, 20, 220),
                 outline=(57, 255, 20, 255),
                 width=1 * S
             )
-            draw.text((today_chip_x + today_chip_w // 2, side_y0 + today_chip_h // 2), "✓ TODAY 今日更新", font=f_lane_today, fill=(5, 20, 8), anchor="mm")
+            draw.text((today_chip_x + today_chip_w // 2, side_y0 + 2 * S + today_chip_h // 2), "✓ TODAY 今日更新", font=f_lane_today, fill=(5, 20, 8), anchor="mm")
 
         # 星期大字与英文全拼
-        title_top = side_y0 + 17 * S
+        title_top = side_y0 + 26 * S
         day_title_color = (163, 255, 143) if is_today else (255, 255, 255)
         draw.text((side_x0, title_top), day_cn, font=f_lane_title, fill=day_title_color, anchor="lt")
 
-        sub_top = title_top + 22 * S
+        sub_top = title_top + 28 * S
         draw.text((side_x0, sub_top), day_en, font=f_lane_sub, fill=(142, 146, 168), anchor="lt")
 
         # 底部收录部数胶囊
-        count_chip_y = sub_top + 13 * S
+        count_chip_y = sub_top + 16 * S
         count_unit = "部企划" if is_web_lane else "部新作"
-        count_str = f"{len(items)} {count_unit}"
-        c_str_w = draw.textlength(count_str, font=f_lane_count)
-        c_chip_w = int(c_str_w + 12 * S)
-        c_chip_h = 15 * S
+        c_num_str = str(len(items))
+        c_unit_str = f" {count_unit}"
+        c_num_w = draw.textlength(c_num_str, font=f_lane_count_num)
+        c_unit_w = draw.textlength(c_unit_str, font=f_lane_count_unit)
+        c_chip_w = int(c_num_w + c_unit_w + 16 * S)
+        c_chip_h = 20 * S
         alpha_canvas.draw_alpha_rounded_rectangle(
             [side_x0, count_chip_y, side_x0 + c_chip_w, count_chip_y + c_chip_h],
-            radius=6 * S,
+            radius=7 * S,
             fill=(255, 255, 255, 12),
             outline=(*tag_bg_color, 80),
             width=1 * S
         )
-        draw.text((side_x0 + 6 * S, count_chip_y + c_chip_h // 2), count_str, font=f_lane_count, fill=tag_bg_color, anchor="lm")
+        draw.text((side_x0 + 8 * S, count_chip_y + c_chip_h // 2), c_num_str, font=f_lane_count_num, fill=tag_bg_color, anchor="lm")
+        draw.text((side_x0 + 8 * S + c_num_w, count_chip_y + c_chip_h // 2), c_unit_str, font=f_lane_count_unit, fill=(142, 146, 168), anchor="lm")
 
         # 右侧卡片区域
         cards_x0 = side_x0 + side_w + side_gap
@@ -993,34 +994,34 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
                 card_outline = (57, 255, 20, 90) if is_today else (255, 255, 255, 28)
                 alpha_canvas.draw_alpha_rounded_rectangle(
                     [cx0, cy0, cx1, cy1],
-                    radius=10 * S,
+                    radius=12 * S,
                     fill=card_fill,
                     outline=card_outline,
                     width=1 * S
                 )
 
                 title = item.get("title", "未命名番剧")
-                cov_x0 = cx0 + 6 * S
+                cov_x0 = cx0 + 8 * S
                 cov_y0 = cy0 + (card_h - poster_h) // 2
                 cov_box = [cov_x0, cov_y0, cov_x0 + poster_w, cov_y0 + poster_h]
 
                 c_img = cover_cache.get(title)
                 c_mask = Image.new("L", (poster_w, poster_h), 0)
-                ImageDraw.Draw(c_mask).rounded_rectangle([0, 0, poster_w, poster_h], radius=6 * S, fill=255)
+                ImageDraw.Draw(c_mask).rounded_rectangle([0, 0, poster_w, poster_h], radius=8 * S, fill=255)
                 if c_img:
                     img.paste(c_img, (cov_x0, cov_y0), c_mask)
                 else:
-                    draw.rounded_rectangle(cov_box, radius=6 * S, fill=(28, 28, 54))
-                alpha_canvas.draw_alpha_rounded_rectangle(cov_box, radius=6 * S, outline=(255, 255, 255, 36), width=1 * S)
+                    draw.rounded_rectangle(cov_box, radius=8 * S, fill=(28, 28, 54))
+                alpha_canvas.draw_alpha_rounded_rectangle(cov_box, radius=8 * S, outline=(255, 255, 255, 36), width=1 * S)
 
-                # 优雅折行算法处理标题
-                tx0 = cov_x0 + poster_w + 8 * S
-                max_tw = cx1 - 6 * S - tx0
+                # 优雅折行算法处理标题 (右侧顶部)
+                tx0 = cov_x0 + poster_w + 10 * S
+                max_tw = cx1 - 8 * S - tx0
                 title_lines = text_wrap_title(title, f_card_title, max_tw, max_lines=2)
                 for l_i, l_txt in enumerate(title_lines[:2]):
-                    draw.text((tx0, cy0 + 7 * S + l_i * 13 * S), l_txt, font=f_card_title, fill=(240, 243, 248), anchor="lt")
+                    draw.text((tx0, cy0 + 10 * S + l_i * 18 * S), l_txt, font=f_card_title, fill=(240, 243, 248), anchor="lt")
 
-                # 计算动态集数徽章与播出时间徽章
+                # 计算动态集数徽章与播出时间徽章 (右侧底部)
                 date_raw = item.get("date_raw", "")
                 custom_txt = item.get("custom_badge_text")
                 if item.get("season_tag") == "上季跨播" or custom_txt:
@@ -1069,32 +1070,32 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
                     tb_border = (0, 229, 255, 70)
                     tb_fg = (0, 229, 255)
 
-                badge_h = 13 * S
-                badge_y = cy1 - 7 * S - badge_h
+                badge_h = 16 * S
+                badge_y = cy1 - 10 * S - badge_h
 
                 # 1. 状态徽章
                 st_w = draw.textlength(st_text, font=f_card_badge)
                 alpha_canvas.draw_alpha_rounded_rectangle(
-                    [tx0, badge_y, tx0 + st_w + 6 * S, badge_y + badge_h],
-                    radius=4 * S,
+                    [tx0, badge_y, tx0 + st_w + 10 * S, badge_y + badge_h],
+                    radius=5 * S,
                     fill=st_bg,
                     outline=st_border,
                     width=1 * S
                 )
-                draw.text((tx0 + 3 * S, badge_y + badge_h // 2), st_text, font=f_card_badge, fill=st_fg, anchor="lm")
+                draw.text((tx0 + 5 * S, badge_y + badge_h // 2), st_text, font=f_card_badge, fill=st_fg, anchor="lm")
 
                 # 2. 播出时间徽章
-                tb_x = tx0 + st_w + 10 * S
+                tb_x = tx0 + st_w + 16 * S
                 tb_w = draw.textlength(tb_text, font=f_card_time)
-                if tb_x + tb_w + 6 * S <= cx1 - 4 * S:
+                if tb_x + tb_w + 10 * S <= cx1 - 6 * S:
                     alpha_canvas.draw_alpha_rounded_rectangle(
-                        [tb_x, badge_y, tb_x + tb_w + 6 * S, badge_y + badge_h],
-                        radius=4 * S,
+                        [tb_x, badge_y, tb_x + tb_w + 10 * S, badge_y + badge_h],
+                        radius=5 * S,
                         fill=tb_bg,
                         outline=tb_border,
                         width=1 * S
                     )
-                    draw.text((tb_x + 3 * S, badge_y + badge_h // 2), tb_text, font=f_card_time, fill=tb_fg, anchor="lm")
+                    draw.text((tb_x + 5 * S, badge_y + badge_h // 2), tb_text, font=f_card_time, fill=tb_fg, anchor="lm")
 
         cur_y += l_h + lane_gap
 
@@ -1106,15 +1107,15 @@ def render_weekly(data: dict, output_path: str, ref_dt: datetime | None = None):
 
     alpha_canvas.draw_alpha_rounded_rectangle(
         [foot_x0, foot_y0, foot_x1, foot_y1],
-        radius=12 * S,
+        radius=14 * S,
         fill=(14, 14, 28, 220),
         outline=(255, 255, 255, 24),
         width=1 * S
     )
 
     octocat_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "img", "octocat.png")
-    icon_size = 18 * S
-    icon_gap = 10 * S
+    icon_size = 20 * S
+    icon_gap = 12 * S
 
     part1 = "PROJECT BY "
     part2 = "xiaoyueRX"
