@@ -1,23 +1,39 @@
 {
-    "cron_expr": {
-        "description": "推送时间的 Cron 表达式 (分 时 日 月 周)",
+    "enable_daily_push": {
+        "description": "是否启用每日番剧推送 (Daily Report)",
+        "type": "bool",
+        "default": true
+    },
+    "daily_cron_expr": {
+        "description": "每日推送时间 Cron (分 时 日 月 周)",
         "type": "string",
         "default": "20 8 * * *",
-        "hint": "默认为每天 08:20 (20 8 * * *)"
+        "hint": "默认每天 08:20 (20 8 * * *)"
+    },
+    "enable_weekly_push": {
+        "description": "是否启用全景周历看板推送 (Weekly Overview)",
+        "type": "bool",
+        "default": true
+    },
+    "weekly_cron_expr": {
+        "description": "周报推送时间 Cron (分 时 日 月 周)",
+        "type": "string",
+        "default": "30 8 * * *",
+        "hint": "默认为每天 08:30 (30 8 * * *)，亦可自由设置为每周一 (30 8 * * 1)"
     },
     "enable_cover": {
-        "description": "是否显示封面图",
+        "description": "是否在卡片中显示海报封面",
         "type": "bool",
         "default": true
     },
     "max_items": {
-        "description": "最大显示条目数",
+        "description": "日报最大显示番剧条目数",
         "type": "int",
         "default": 20
     },
-    "timezone": {
-        "description": "时区",
-        "type": "string",
-        "default": "Asia/Shanghai"
+    "auto_clean_temp": {
+        "description": "发送后是否自动安全清理临时图片碎片并保持磁盘零膨胀",
+        "type": "bool",
+        "default": true
     }
 }
